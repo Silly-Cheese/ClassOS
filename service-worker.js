@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classos-1.0-v7';
+const CACHE_NAME = 'classos-1.0-v8';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,12 +6,14 @@ const APP_SHELL = [
   './assets/lms.css',
   './assets/intelligence.css',
   './assets/production.css',
+  './assets/gradebook.css',
   './assets/icon.svg',
   './manifest.webmanifest',
   './src/firebase.js',
   './src/main.js',
   './src/terms.js',
   './src/course-tools.js',
+  './src/gradebook.js',
   './src/ui-fixes.js',
   './src/lms.js',
   './src/intelligence.js',
