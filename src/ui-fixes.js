@@ -1,8 +1,6 @@
 import { auth, db, OWNER_EMAIL } from './firebase.js';
 import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
-import {
-  doc, getDoc, setDoc, serverTimestamp
-} from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { doc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({
@@ -17,6 +15,7 @@ const roleName = (value = '') => ({
 
 let profile = null;
 let fallbackTerms = [];
+let pagePolishQueued = false;
 
 function toast(message, type = '') {
   const region = $('toast-region');
@@ -95,12 +94,8 @@ async function tryMigrateFallbackTerms() {
         updatedAt: serverTimestamp()
       }, { merge: true });
     } catch (error) {
-      if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
-        remaining.push(term);
-      } else {
-        remaining.push(term);
-        console.warn('Term migration failed', error);
-      }
+      remaining.push(term);
+      if (error?.code !== 'permission-denied') console.warn('Term migration failed', error);
     }
   }
   if (remaining.length !== terms.length) await saveFallbackTerms(remaining);
@@ -121,7 +116,7 @@ async function renderSettings() {
   if (!content) return;
   const name = profile?.displayName || auth.currentUser?.displayName || auth.currentUser?.email || 'User';
   const email = profile?.email || auth.currentUser?.email || '';
-  const ownerTools = isOwner() ? `<section class="card"><div class="section-head"><div><h3>Site settings</h3><p>Branding and administrative tools.</p></div></div><div class="p4-action-stack"><button class="btn btn-secondary" data-p4-action="brand-settings">Branding</button><button class="btn btn-secondary" data-term-fix-action="open-operations">Operations</button></div></section>` : '';
+  const ownerTools = isOwner() ? `<div class="card"><div class="section-head"><div><h3>Site settings</h3><p>Branding and admin tools.</p></div></div><div class="p4-action-stack"><button class="btn btn-secondary" data-p4-action="brand-settings">Branding</button><button class="btn btn-secondary" data-ui-action="open-operations">Operations</button></div></div>` : '';
   content.innerHTML = `<div class="toolbar"><div><h2 style="margin:0">Settings</h2></div></div>
     <section class="grid grid-2">
       <div class="card"><div class="section-head"><div><h3>Account</h3></div></div><div class="list">
@@ -131,7 +126,7 @@ async function renderSettings() {
       </div></div>
       <div class="card"><div class="section-head"><div><h3>Appearance</h3><p>Theme and display density.</p></div></div><button class="btn btn-secondary" data-p4-action="appearance">Change appearance</button></div>
       ${ownerTools}
-      <div class="card"><div class="section-head"><div><h3>Session</h3></div></div><button class="btn btn-secondary" data-term-fix-action="sign-out">Sign out</button></div>
+      <div class="card"><div class="section-head"><div><h3>Session</h3></div></div><button class="btn btn-secondary" data-ui-action="sign-out">Sign out</button></div>
     </section>`;
 }
 
@@ -139,10 +134,8 @@ function showCompatTermForm(term) {
   const modal = $('p4-modal');
   const body = $('p4-modal-body');
   if (!modal || !body) return toast('Open Operations and try again.', 'error');
-  const title = $('p4-modal-title');
-  const kicker = $('p4-modal-kicker');
-  if (title) title.textContent = 'Edit term';
-  if (kicker) kicker.textContent = 'TERMS';
+  if ($('p4-modal-title')) $('p4-modal-title').textContent = 'Edit term';
+  if ($('p4-modal-kicker')) $('p4-modal-kicker').textContent = 'TERMS';
   body.innerHTML = `<form id="p4-term-form"><input type="hidden" name="id" value="${esc(term.id)}"><input type="hidden" name="lockedSchoolId" value="${esc(term.schoolId)}"><div class="form-grid"><div class="field span-2"><label>School</label><input value="${esc(term.schoolName || 'School')}" disabled></div><div class="field span-2"><label>Term name</label><input name="name" maxlength="80" required value="${esc(term.name)}"></div><div class="field"><label>Start date</label><input name="startDate" type="date" required value="${esc(term.startDate)}"></div><div class="field"><label>End date</label><input name="endDate" type="date" required value="${esc(term.endDate)}"></div><div class="field"><label>Status</label><select name="status"><option value="upcoming" ${term.status === 'upcoming' ? 'selected' : ''}>Upcoming</option><option value="active" ${term.status === 'active' ? 'selected' : ''}>Active</option><option value="closed" ${term.status === 'closed' ? 'selected' : ''}>Closed</option></select></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p4-action="close">Cancel</button><button class="btn btn-primary" type="submit">Save term</button></div></form>`;
   modal.classList.remove('hidden');
 }
@@ -222,9 +215,10 @@ async function injectFallbackTerms() {
   if (!isOwner() || $('page-title')?.textContent !== 'Operations') return;
   await loadFallbackTerms();
   if (!fallbackTerms.length) return;
-  const heading = [...document.querySelectorAll('#page-content h3')].find((node) => node.textContent.trim() === 'Terms & school years' || node.textContent.trim() === 'Terms');
+  const heading = [...document.querySelectorAll('#page-content h3')].find((node) => ['Terms & school years', 'Terms'].includes(node.textContent.trim()));
   const section = heading?.closest('section');
   if (!section) return;
+
   section.querySelectorAll('[data-compat-term-row]').forEach((node) => node.remove());
   let tbody = section.querySelector('tbody');
   if (!tbody) {
@@ -235,49 +229,50 @@ async function injectFallbackTerms() {
     section.appendChild(wrap);
     tbody = wrap.querySelector('tbody');
   }
-  fallbackTerms.sort((a, b) => String(b.startDate).localeCompare(String(a.startDate))).forEach((term) => {
+
+  [...fallbackTerms].sort((a, b) => String(b.startDate).localeCompare(String(a.startDate))).forEach((term) => {
     const row = document.createElement('tr');
     row.dataset.compatTermRow = term.id;
-    row.innerHTML = `<td><span class="row-title">${esc(term.name)}</span><span class="row-subtitle">${esc(term.schoolName || 'School')}</span></td><td>${esc(term.startDate)} → ${esc(term.endDate)}</td><td><span class="pill ${term.status === 'active' ? 'success' : term.status === 'upcoming' ? 'info' : ''}">${esc(term.status)}</span></td><td><div class="row-actions">${term.status !== 'active' ? `<button class="pill clickable info" data-term-fix-action="activate-term" data-id="${esc(term.id)}">Activate</button>` : ''}<button class="pill clickable" data-term-fix-action="edit-term" data-id="${esc(term.id)}">Edit</button></div></td>`;
+    row.innerHTML = `<td><span class="row-title">${esc(term.name)}</span><span class="row-subtitle">${esc(term.schoolName || 'School')}</span></td><td>${esc(term.startDate)} → ${esc(term.endDate)}</td><td><span class="pill ${term.status === 'active' ? 'success' : term.status === 'upcoming' ? 'info' : ''}">${esc(term.status)}</span></td><td><div class="row-actions">${term.status !== 'active' ? `<button class="pill clickable info" data-ui-action="activate-term" data-id="${esc(term.id)}">Activate</button>` : ''}<button class="pill clickable" data-ui-action="edit-term" data-id="${esc(term.id)}">Edit</button></div></td>`;
     tbody.appendChild(row);
   });
 }
 
-function naturalize() {
-  const brandEyebrow = document.querySelector('.auth-brand-copy .eyebrow');
-  const brandTitle = document.querySelector('.auth-brand-copy h1');
-  const brandCopy = document.querySelector('.auth-brand-copy p');
-  if (brandEyebrow) brandEyebrow.textContent = 'CLASSOS';
-  if (brandTitle && brandTitle.textContent.includes('School shouldn')) brandTitle.textContent = 'School, all in one place.';
-  if (brandCopy) brandCopy.textContent = 'Classes, assignments, grades, attendance, and messages.';
+function setText(node, value) {
+  if (node && node.textContent !== value) node.textContent = value;
+}
 
+function naturalizeStatic() {
+  setText(document.querySelector('.auth-brand-copy .eyebrow'), 'CLASSOS');
+  const brandTitle = document.querySelector('.auth-brand-copy h1');
+  if (brandTitle?.textContent.includes('School shouldn')) setText(brandTitle, 'School, all in one place.');
+  setText(document.querySelector('.auth-brand-copy p'), 'Classes, assignments, grades, attendance, and messages.');
   const proof = document.querySelector('.auth-proof');
   if (proof && !proof.dataset.cleaned) {
     proof.dataset.cleaned = '1';
     proof.innerHTML = '<div><strong>Students</strong><span>See what’s due and what’s missing</span></div><div><strong>Teachers</strong><span>Manage classes and grades</span></div><div><strong>Families</strong><span>Keep up with progress</span></div>';
   }
+}
 
+function naturalizePage() {
   const p4Hero = document.querySelector('#page-content .p4-hero');
   if (p4Hero) {
-    const eyebrow = p4Hero.querySelector('.eyebrow');
-    const title = p4Hero.querySelector('h1');
-    const copy = p4Hero.querySelector('p');
-    if (eyebrow) eyebrow.textContent = 'ADMIN';
-    if (title) title.textContent = 'Operations';
-    if (copy) copy.textContent = 'Manage terms, courses, imports, exports, and site settings.';
+    setText(p4Hero.querySelector('.eyebrow'), 'ADMIN');
+    setText(p4Hero.querySelector('h1'), 'Operations');
+    setText(p4Hero.querySelector('p'), 'Manage terms, courses, imports, exports, and site settings.');
   }
 
   document.querySelectorAll('#page-content .section-head h3').forEach((heading) => {
     const text = heading.textContent.trim();
-    if (text === 'Terms & school years') heading.textContent = 'Terms';
-    if (text === 'Duplicate, archive, restore') heading.textContent = 'Courses';
-    if (text === 'Export & migration tools') heading.textContent = 'Data';
-    if (text === 'Brand & appearance') heading.textContent = 'Site settings';
+    if (text === 'Terms & school years') setText(heading, 'Terms');
+    if (text === 'Duplicate, archive, restore') setText(heading, 'Courses');
+    if (text === 'Export & migration tools') setText(heading, 'Data');
+    if (text === 'Brand & appearance') setText(heading, 'Site settings');
   });
   document.querySelectorAll('#page-content .section-head p').forEach((copy) => {
     const text = copy.textContent.trim();
-    if (text.includes('Control active instructional periods')) copy.textContent = 'Set school-year and grading-period dates.';
-    if (text.includes('Archived courses remain in Firestore')) copy.textContent = 'Duplicate, archive, or restore courses.';
+    if (text.includes('Control active instructional periods')) setText(copy, 'Set school-year and grading-period dates.');
+    if (text.includes('Archived courses remain in Firestore')) setText(copy, 'Duplicate, archive, or restore courses.');
   });
   document.querySelectorAll('#page-content .callout').forEach((callout) => {
     if (callout.textContent.includes('Production guardrail:')) callout.remove();
@@ -286,11 +281,19 @@ function naturalize() {
 
   const pageTitle = $('page-title')?.textContent || '';
   const heroCopy = document.querySelector('#page-content .hero > p');
-  if (heroCopy && pageTitle === 'Home' && heroCopy.textContent.includes('working instructional layer')) {
-    heroCopy.textContent = 'Here’s what’s happening across your classes today.';
-  }
-  if (heroCopy && pageTitle === 'Absent Mode') heroCopy.textContent = 'See what you missed and what still needs to be finished.';
-  if (heroCopy && pageTitle === 'Family') heroCopy.textContent = 'See grades, missing work, and attendance in one place.';
+  if (heroCopy && pageTitle === 'Home' && heroCopy.textContent.includes('working instructional layer')) setText(heroCopy, 'Here’s what’s happening across your classes today.');
+  if (heroCopy && pageTitle === 'Absent Mode') setText(heroCopy, 'See what you missed and what still needs to be finished.');
+  if (heroCopy && pageTitle === 'Family') setText(heroCopy, 'See grades, missing work, and attendance in one place.');
+}
+
+function schedulePagePolish() {
+  if (pagePolishQueued) return;
+  pagePolishQueued = true;
+  queueMicrotask(async () => {
+    pagePolishQueued = false;
+    naturalizePage();
+    if ($('page-title')?.textContent === 'Operations') await injectFallbackTerms();
+  });
 }
 
 document.addEventListener('click', async (event) => {
@@ -299,21 +302,23 @@ document.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
     await renderSettings();
+    schedulePagePolish();
     return;
   }
 
-  const action = event.target.closest('[data-term-fix-action]');
+  const action = event.target.closest('[data-ui-action]');
   if (!action) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (action.dataset.termFixAction === 'sign-out') await signOut(auth);
-  if (action.dataset.termFixAction === 'open-operations') document.querySelector('.p4-nav')?.click();
-  if (action.dataset.termFixAction === 'edit-term') {
+
+  if (action.dataset.uiAction === 'sign-out') await signOut(auth);
+  if (action.dataset.uiAction === 'open-operations') document.querySelector('.p4-nav')?.click();
+  if (action.dataset.uiAction === 'edit-term') {
     await loadFallbackTerms();
     const term = fallbackTerms.find((item) => item.id === action.dataset.id);
     if (term) showCompatTermForm(term);
   }
-  if (action.dataset.termFixAction === 'activate-term') {
+  if (action.dataset.uiAction === 'activate-term') {
     await loadFallbackTerms();
     await activateCompatTerm(action.dataset.id);
   }
@@ -338,13 +343,16 @@ document.addEventListener('submit', async (event) => {
   }
 }, true);
 
-const observer = new MutationObserver(() => {
-  naturalize();
-  if ($('page-title')?.textContent === 'Operations') injectFallbackTerms().catch(console.warn);
-});
-observer.observe(document.documentElement, { childList: true, subtree: true });
+// Only watch replacements of the main page contents. Do not watch the entire DOM:
+// this module intentionally edits descendants and must never observe its own edits.
+const pageContent = $('page-content');
+if (pageContent) {
+  const observer = new MutationObserver(schedulePagePolish);
+  observer.observe(pageContent, { childList: true, subtree: false });
+}
 
-naturalize();
+naturalizeStatic();
+schedulePagePolish();
 
 onAuthStateChanged(auth, async (user) => {
   profile = null;
@@ -355,5 +363,6 @@ onAuthStateChanged(auth, async (user) => {
     await tryMigrateFallbackTerms();
     await loadFallbackTerms();
   }
-  naturalize();
+  naturalizeStatic();
+  schedulePagePolish();
 });
