@@ -82,6 +82,9 @@ const counselor = testEnv.authenticatedContext('counselor1', {
 const guardian = testEnv.authenticatedContext('guardian-new', {
   email: 'guardian@example.com', email_verified: true
 }).firestore();
+const owner = testEnv.authenticatedContext('owner1', {
+  email: 'christophershelley257@gmail.com', email_verified: true
+}).firestore();
 
 // Invited guardians must not be able to forge their own linked-student access.
 await assertFails(setDoc(doc(guardian, 'users', 'guardian-new'), {
@@ -110,11 +113,43 @@ await assertFails(setDoc(doc(counselor, 'submissions', 'counselor-grade'), {
   responseText: '', linkUrl: '', status: 'graded', score: 10, gradedBy: 'counselor1', gradedAt: null
 }));
 
-// Teachers manage instruction, but course membership is administrator-controlled in ClassOS 1.0.
+// Teachers can create a course only in their own school, with themselves as the sole teacher and no students.
+await assertSucceeds(setDoc(doc(teacher, 'courses', 'teacher-created'), {
+  organizationId: 'org1', schoolId: 'school1', name: 'Teacher Course', courseCode: 'TC1', term: 'Fall 2026',
+  teacherIds: ['teacher1'], studentIds: [],
+  gradeCategories: [{ id: 'coursework', name: 'Coursework', weight: 100 }],
+  status: 'active', createdBy: 'teacher1'
+}));
+await assertFails(setDoc(doc(teacher, 'courses', 'teacher-loaded-roster'), {
+  organizationId: 'org1', schoolId: 'school1', name: 'Bad Course',
+  teacherIds: ['teacher1'], studentIds: ['student1'], status: 'active', createdBy: 'teacher1'
+}));
+await assertFails(setDoc(doc(teacher, 'courses', 'teacher-added-staff'), {
+  organizationId: 'org1', schoolId: 'school1', name: 'Bad Course',
+  teacherIds: ['teacher1', 'teacher2'], studentIds: [], status: 'active', createdBy: 'teacher1'
+}));
+await assertFails(setDoc(doc(teacher, 'courses', 'teacher-cross-school'), {
+  organizationId: 'org2', schoolId: 'school2', name: 'Cross School',
+  teacherIds: ['teacher1'], studentIds: [], status: 'active', createdBy: 'teacher1'
+}));
+
+// Existing teacher course membership remains administrator-controlled after creation.
 await assertFails(updateDoc(doc(teacher, 'courses', 'course1'), { studentIds: ['student1'] }));
 await assertSucceeds(updateDoc(doc(teacher, 'courses', 'course1'), {
   gradeCategories: [{ id: 'tests', name: 'Tests', weight: 100 }]
 }));
+
+// Platform Owner can persist terms both in the normal term collection and in the owner fallback config.
+await assertSucceeds(setDoc(doc(owner, 'terms', 'term-owner-test'), {
+  schoolId: 'school1', organizationId: 'org1', name: 'Fall 2026', startDate: '2026-08-15', endDate: '2026-12-20',
+  status: 'active', createdBy: 'owner1'
+}));
+await assertSucceeds(setDoc(doc(owner, 'system', 'config'), {
+  termRecords: [{
+    id: 'term-owner-test', schoolId: 'school1', organizationId: 'org1', schoolName: 'School One',
+    name: 'Fall 2026', startDate: '2026-08-15', endDate: '2026-12-20', status: 'active', createdBy: 'owner1'
+  }]
+}, { merge: true }));
 
 // Students can read a published assessment but not a draft or its protected key.
 await assertSucceeds(getDoc(doc(student, 'assessments', 'assessment-published')));
