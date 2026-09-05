@@ -5,8 +5,6 @@ import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase
 const $ = (id) => document.getElementById(id);
 const emailKey = (value = '') => String(value).trim().toLowerCase();
 let profile = null;
-let renderQueued = false;
-let rebuilding = false;
 
 const role = () => profile?.role || '';
 const isOwner = () => emailKey(auth.currentUser?.email) === OWNER_EMAIL;
@@ -19,21 +17,23 @@ async function loadProfile() {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
-function standard(route, icon, label) {
-  return `<button class="nav-item" data-route="${route}"><span>${icon}</span>${label}</button>`;
+function standard(route, icon, label, section = '') {
+  return `<button class="nav-item" data-route="${route}"${section ? ` data-nav-section="${section}"` : ''}><span>${icon}</span>${label}</button>`;
 }
-function p3(route, icon, label) {
-  return `<button class="nav-item p3-nav" data-p3-route="${route}"><span>${icon}</span>${label}</button>`;
+function p3(route, icon, label, section = '') {
+  return `<button class="nav-item p3-nav" data-p3-route="${route}"${section ? ` data-nav-section="${section}"` : ''}><span>${icon}</span>${label}</button>`;
 }
-function p4(icon, label) {
-  return `<button class="nav-item p4-nav" data-p4-route="operations"><span>${icon}</span>${label}</button>`;
+function p4(icon, label, section = '') {
+  return `<button class="nav-item p4-nav" data-p4-route="operations"${section ? ` data-nav-section="${section}"` : ''}><span>${icon}</span>${label}</button>`;
 }
-function manage(icon, label) {
-  return `<button class="nav-item manage-nav" data-manage-route="manage"><span>${icon}</span>${label}</button>`;
+function manage(icon, label, section = '') {
+  return `<button class="nav-item manage-nav" data-manage-route="manage"${section ? ` data-nav-section="${section}"` : ''}><span>${icon}</span>${label}</button>`;
 }
-function group(label, items) {
-  if (!items.length) return '';
-  return `<details class="nav-group"><summary>${label}<span>⌄</span></summary><div class="nav-group-items">${items.join('')}</div></details>`;
+function workspace(icon, label, section = '') {
+  return `<button class="nav-item workspace-nav" data-workspace-route="workspace"${section ? ` data-nav-section="${section}"` : ''}><span>${icon}</span>${label}</button>`;
+}
+function sectionToggle(name, label) {
+  return `<button type="button" class="nav-section-toggle" data-nav-section-toggle="${name}" aria-expanded="true"><span>${label}</span><b>⌄</b></button>`;
 }
 
 function desiredMarkup() {
@@ -45,34 +45,34 @@ function desiredMarkup() {
 
   if (r === 'student') {
     core.push(standard('courses', '▤', 'Courses'), standard('assignments', '✓', 'Assignments'), standard('gradebook', '▦', 'Grades'));
-    tools.push(standard('calendar', '□', 'Calendar'), standard('inbox', '✉', 'Inbox'), standard('absent', '↻', 'Absent Mode'));
+    tools.push(standard('calendar', '□', 'Calendar', 'tools'), standard('inbox', '✉', 'Inbox', 'tools'), standard('absent', '↻', 'Absent Mode', 'tools'));
   } else if (r === 'guardian') {
     core.push(standard('family', '⌂', 'Family'), standard('courses', '▤', 'Courses'));
-    tools.push(standard('inbox', '✉', 'Inbox'));
+    tools.push(standard('inbox', '✉', 'Inbox', 'tools'));
   } else if (educator() || admin() || ['counselor', 'staff'].includes(r)) {
     core.push(standard('courses', '▤', 'Courses'));
     if (educator() || admin()) {
       core.push(standard('gradebook', '▦', 'Gradebook'), standard('assignments', '✓', 'Assignments'));
-      tools.push(p3('assessments', '◫', 'Assessments'));
+      tools.push(p3('assessments', '◫', 'Assessments', 'tools'));
     }
-    tools.push(standard('calendar', '□', 'Calendar'));
-    if (r !== 'staff') tools.push(standard('attendance', '◉', 'Attendance'));
-    tools.push(standard('inbox', '✉', 'Inbox'));
-    if (educator() || admin()) tools.push(p3('command', '◈', 'Insights'));
-    if (r === 'counselor' || educator() || admin()) tools.push(p3('support', '+', 'Student Support'));
-    if (r === 'district_admin' || isOwner()) tools.push(p3('district', '▥', 'District Overview'));
+    tools.push(standard('calendar', '□', 'Calendar', 'tools'));
+    if (r !== 'staff') tools.push(standard('attendance', '◉', 'Attendance', 'tools'));
+    tools.push(standard('inbox', '✉', 'Inbox', 'tools'));
+    if (educator() || admin()) tools.push(p3('command', '◈', 'Insights', 'tools'));
+    if (r === 'counselor' || educator() || admin()) tools.push(p3('support', '+', 'Student Support', 'tools'));
+    if (r === 'district_admin' || isOwner()) tools.push(p3('district', '▥', 'District Overview', 'tools'));
 
-    if (['district_admin', 'school_admin', 'counselor'].includes(r) || isOwner()) administration.push(standard('people', '◎', 'People'));
-    if (educator() || admin()) administration.push(manage('⌫', 'Manage'));
-    if (admin()) administration.push(p4('▣', 'Operations'));
-    if (r === 'district_admin' || r === 'school_admin') administration.push('<button class="nav-item workspace-nav" data-workspace-route="workspace"><span>◇</span>Workspace</button>');
+    if (['district_admin', 'school_admin', 'counselor'].includes(r) || isOwner()) administration.push(standard('people', '◎', 'People', 'administration'));
+    if (educator() || admin()) administration.push(manage('⌫', 'Manage', 'administration'));
+    if (admin()) administration.push(p4('▣', 'Operations', 'administration'));
+    if (r === 'district_admin' || r === 'school_admin') administration.push(workspace('◇', 'Workspace', 'administration'));
     if (isOwner()) {
-      administration.push(standard('organizations', '◇', 'Structure'));
-      administration.push(standard('platform', '⚙', 'Platform'));
+      administration.push(standard('organizations', '◇', 'Structure', 'administration'));
+      administration.push(standard('platform', '⚙', 'Platform', 'administration'));
     }
   }
 
-  return `${core.join('')}${group('Tools', tools)}${group('Administration', administration)}`;
+  return `${core.join('')}${tools.length ? sectionToggle('tools', 'Tools') + tools.join('') : ''}${administration.length ? sectionToggle('administration', 'Administration') + administration.join('') : ''}`;
 }
 
 const titleByKey = {
@@ -88,56 +88,86 @@ function activeTitleFor(button) {
   return titleByKey[key] || '';
 }
 
+function collapsedKey(name) {
+  return `classos-nav-${name}-collapsed`;
+}
+
+function applySectionState(name) {
+  const nav = $('primary-nav');
+  if (!nav) return;
+  const collapsed = localStorage.getItem(collapsedKey(name)) === '1';
+  nav.querySelector(`[data-nav-section-toggle="${name}"]`)?.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  nav.querySelectorAll(`[data-nav-section="${name}"]`).forEach((node) => node.classList.toggle('nav-collapsed', collapsed));
+}
+
 function updateActive() {
   const title = $('page-title')?.textContent?.trim() || '';
   document.querySelectorAll('#primary-nav .nav-item').forEach((button) => {
-    const active = activeTitleFor(button) === title;
-    button.classList.toggle('active', active);
-    if (active) button.closest('details')?.setAttribute('open', '');
+    button.classList.toggle('active', activeTitleFor(button) === title);
   });
 }
 
-function rebuild() {
-  if (rebuilding) return;
+function renderNavigation() {
   const nav = $('primary-nav');
   if (!nav) return;
-  const html = desiredMarkup();
-  const signature = `${profile?.role || 'none'}|${profile?.status || 'none'}|${isOwner() ? 'owner' : 'user'}`;
-  if (nav.dataset.navSignature !== signature || nav.innerHTML !== html) {
-    rebuilding = true;
-    nav.innerHTML = html;
-    nav.dataset.navSignature = signature;
-    rebuilding = false;
-  }
+  nav.innerHTML = desiredMarkup();
+  applySectionState('tools');
+  applySectionState('administration');
   if ($('mini-role') && educator()) $('mini-role').textContent = 'Educator';
   updateActive();
 }
 
-function scheduleRebuild() {
-  if (renderQueued) return;
-  renderQueued = true;
-  window.setTimeout(() => {
-    renderQueued = false;
-    rebuild();
-  }, 90);
+function normalizeDynamicItems() {
+  const nav = $('primary-nav');
+  if (!nav) return;
+  const assignments = [
+    ['.p3-nav[data-p3-route="assessments"]', 'tools'],
+    ['.p3-nav[data-p3-route="command"]', 'tools'],
+    ['.p3-nav[data-p3-route="support"]', 'tools'],
+    ['.p3-nav[data-p3-route="district"]', 'tools'],
+    ['.manage-nav', 'administration'],
+    ['.p4-nav', 'administration'],
+    ['.workspace-nav', 'administration'],
+    ['[data-route="people"]', 'administration'],
+    ['[data-route="organizations"]', 'administration'],
+    ['[data-route="platform"]', 'administration']
+  ];
+  assignments.forEach(([selector, section]) => {
+    nav.querySelectorAll(selector).forEach((node) => {
+      if (node.parentElement === nav) node.dataset.navSection = section;
+    });
+  });
+  applySectionState('tools');
+  applySectionState('administration');
+  updateActive();
 }
 
-const nav = $('primary-nav');
-if (nav) new MutationObserver(() => { if (!rebuilding) scheduleRebuild(); }).observe(nav, { childList: true });
-if ($('page-title')) new MutationObserver(updateActive).observe($('page-title'), { childList: true, characterData: true, subtree: true });
-
 document.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-nav-section-toggle]');
+  if (toggle) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const name = toggle.dataset.navSectionToggle;
+    const collapsed = localStorage.getItem(collapsedKey(name)) === '1';
+    localStorage.setItem(collapsedKey(name), collapsed ? '0' : '1');
+    applySectionState(name);
+    return;
+  }
   const item = event.target.closest('#primary-nav .nav-item');
   if (!item) return;
   window.setTimeout(updateActive, 120);
   $('sidebar')?.classList.remove('open');
 }, true);
 
+if ($('page-title')) new MutationObserver(updateActive).observe($('page-title'), { childList: true, characterData: true, subtree: true });
+
 onAuthStateChanged(auth, async (user) => {
-  if (!user) { profile = null; scheduleRebuild(); return; }
+  if (!user) { profile = null; renderNavigation(); return; }
   try {
     profile = await loadProfile();
-    scheduleRebuild();
+    renderNavigation();
+    window.setTimeout(normalizeDynamicItems, 250);
+    window.setTimeout(normalizeDynamicItems, 900);
   } catch (error) {
     console.warn('Navigation could not load the current role', error);
   }
