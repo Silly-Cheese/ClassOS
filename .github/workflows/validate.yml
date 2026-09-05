@@ -2,7 +2,7 @@ name: Validate ClassOS
 
 on:
   push:
-    branches: [main]
+    branches: [main, phase-3-intelligence]
   pull_request:
     branches: [main]
 
@@ -23,5 +23,6 @@ jobs:
         run: |
           node --check src/main.js
           node --check src/lms.js
+          node --check src/intelligence.js
           node --check src/firebase.js
           node --check service-worker.js
