@@ -24,6 +24,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function userExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function userData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
     function isOwner() {
       return isBootstrapOwner();
     }
@@ -95,10 +103,16 @@ service cloud.firestore {
         && organizationId in ownProfile().organizationIds;
     }
 
-    function sameSchool(userData) {
+    function sameSchool(userInfo) {
       return signedIn()
         && ownProfile().status == 'active'
-        && ownProfile().schoolIds.hasAny(userData.schoolIds);
+        && ownProfile().schoolIds.hasAny(userInfo.schoolIds);
+    }
+
+    function studentBelongsToSchool(studentId, schoolId) {
+      return userExists(studentId)
+        && userData(studentId).role == 'student'
+        && schoolId in userData(studentId).schoolIds;
     }
 
     function courseData(courseId) {
@@ -140,6 +154,12 @@ service cloud.firestore {
         || (hasRole(['teacher']) && isCourseTeacher(courseId));
     }
 
+    function canAdminCourse(courseId) {
+      return isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(courseData(courseId).schoolId));
+    }
+
     function canReviewCourse(courseId) {
       return isOwner()
         || (hasRole(['district_admin', 'school_admin', 'counselor'])
@@ -166,13 +186,31 @@ service cloud.firestore {
     }
 
     function canCreateIntervention(data) {
-      return isOwner()
-        || (hasRole(['district_admin', 'school_admin', 'counselor'])
-          && belongsToSchool(data.schoolId))
-        || (hasRole(['teacher'])
-          && data.courseId != ''
-          && isCourseTeacher(data.courseId)
-          && data.studentId in courseData(data.courseId).studentIds);
+      return studentBelongsToSchool(data.studentId, data.schoolId)
+        && (
+          isOwner()
+          || (hasRole(['district_admin', 'school_admin', 'counselor'])
+            && belongsToSchool(data.schoolId))
+          || (hasRole(['teacher'])
+            && data.courseId != ''
+            && isCourseTeacher(data.courseId)
+            && data.studentId in courseData(data.courseId).studentIds)
+        );
+    }
+
+    function canMessageUser(recipientId) {
+      return userExists(recipientId)
+        && recipientId != request.auth.uid
+        && (
+          isOwner()
+          || (
+            sameSchool(userData(recipientId))
+            && (
+              hasRole(['district_admin', 'school_admin', 'counselor', 'teacher', 'staff'])
+              || userData(recipientId).role in ['teacher', 'district_admin', 'school_admin', 'counselor', 'staff']
+            )
+          )
+        );
     }
 
     match /users/{uid} {
@@ -183,7 +221,7 @@ service cloud.firestore {
           && sameSchool(resource.data)
           && (
             hasRole(['district_admin', 'school_admin', 'counselor', 'teacher'])
-            || resource.data.role in ['teacher', 'district_admin', 'school_admin', 'counselor']
+            || resource.data.role in ['teacher', 'district_admin', 'school_admin', 'counselor', 'staff']
           ));
 
       allow create: if signedIn() && request.auth.uid == uid && (
@@ -200,6 +238,10 @@ service cloud.firestore {
           && (safeSelfProfileUpdate() || validInviteUpgrade()))
         || (hasRole(['district_admin', 'school_admin'])
           && sameSchool(resource.data)
+          && request.resource.data.schoolIds == resource.data.schoolIds
+          && request.resource.data.organizationIds == resource.data.organizationIds
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.status == resource.data.status
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['linkedStudentIds', 'guardianIds']));
 
@@ -229,6 +271,21 @@ service cloud.firestore {
       allow create, update, delete: if isOwner();
     }
 
+    match /terms/{termId} {
+      allow read: if isOwner() || belongsToSchool(resource.data.schoolId);
+      allow create: if isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(request.resource.data.schoolId));
+      allow update: if isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(resource.data.schoolId)
+          && request.resource.data.schoolId == resource.data.schoolId
+          && request.resource.data.organizationId == resource.data.organizationId);
+      allow delete: if isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(resource.data.schoolId));
+    }
+
     match /courses/{courseId} {
       allow read: if isOwner()
         || belongsToSchool(resource.data.schoolId)
@@ -241,11 +298,13 @@ service cloud.firestore {
 
       allow update: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
-          && belongsToSchool(resource.data.schoolId))
+          && belongsToSchool(resource.data.schoolId)
+          && request.resource.data.schoolId == resource.data.schoolId
+          && request.resource.data.organizationId == resource.data.organizationId)
         || (hasRole(['teacher'])
           && request.auth.uid in resource.data.teacherIds
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['studentIds', 'teacherIds', 'gradeCategories', 'updatedAt']));
+            .hasOnly(['gradeCategories', 'updatedAt']));
 
       allow delete: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
@@ -256,7 +315,11 @@ service cloud.firestore {
       allow read: if canReadCourseContent(resource.data.courseId);
       allow create: if canManageCourse(request.resource.data.courseId)
         && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
-      allow update, delete: if canManageCourse(resource.data.courseId);
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId
+        && request.resource.data.organizationId == resource.data.organizationId;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /submissions/{submissionId} {
@@ -270,22 +333,31 @@ service cloud.firestore {
           && request.resource.data.studentId == request.auth.uid
           && isCourseStudent(request.resource.data.courseId)
           && assignmentData(request.resource.data.assignmentId).courseId == request.resource.data.courseId
+          && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId
           && request.resource.data.score == null
           && request.resource.data.gradedBy == null
           && request.resource.data.gradedAt == null
           && request.resource.data.status in ['submitted', 'late']
         ) || (
-          canReviewCourse(request.resource.data.courseId)
+          canManageCourse(request.resource.data.courseId)
           && request.resource.data.studentId in courseData(request.resource.data.courseId).studentIds
+          && assignmentData(request.resource.data.assignmentId).courseId == request.resource.data.courseId
+          && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId
         );
 
-      allow update: if canReviewCourse(resource.data.courseId)
-        || (
+      allow update: if (
+          canManageCourse(resource.data.courseId)
+          && request.resource.data.studentId == resource.data.studentId
+          && request.resource.data.assignmentId == resource.data.assignmentId
+          && request.resource.data.courseId == resource.data.courseId
+          && request.resource.data.schoolId == resource.data.schoolId
+        ) || (
           signedIn()
           && resource.data.studentId == request.auth.uid
           && request.resource.data.studentId == resource.data.studentId
           && request.resource.data.assignmentId == resource.data.assignmentId
           && request.resource.data.courseId == resource.data.courseId
+          && request.resource.data.schoolId == resource.data.schoolId
           && request.resource.data.status in ['submitted', 'late']
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'responseText', 'linkUrl', 'status', 'submittedAt', 'updatedAt'
@@ -293,7 +365,7 @@ service cloud.firestore {
         );
 
       allow delete: if isOwner()
-        || canReviewCourse(resource.data.courseId);
+        || canManageCourse(resource.data.courseId);
     }
 
     match /attendanceRecords/{recordId} {
@@ -303,15 +375,25 @@ service cloud.firestore {
         || isGuardianForStudent(resource.data.studentId);
 
       allow create: if canManageCourse(request.resource.data.courseId)
-        && request.resource.data.studentId in courseData(request.resource.data.courseId).studentIds;
+        && request.resource.data.studentId in courseData(request.resource.data.courseId).studentIds
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
 
-      allow update, delete: if canManageCourse(resource.data.courseId);
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.date == resource.data.date;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /announcements/{announcementId} {
       allow read: if canReadCourseContent(resource.data.courseId);
-      allow create: if canManageCourse(request.resource.data.courseId);
-      allow update, delete: if canManageCourse(resource.data.courseId);
+      allow create: if canManageCourse(request.resource.data.courseId)
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /messages/{messageId} {
@@ -322,12 +404,14 @@ service cloud.firestore {
       allow create: if signedIn()
         && ownProfile().status == 'active'
         && request.resource.data.senderId == request.auth.uid
-        && request.resource.data.recipientIds.size() >= 1
-        && request.resource.data.recipientIds.size() <= 20;
+        && request.resource.data.recipientIds.size() == 1
+        && canMessageUser(request.resource.data.recipientIds[0]);
 
       allow update: if signedIn()
         && request.auth.uid in resource.data.recipientIds
         && request.auth.uid in request.resource.data.readBy
+        && request.resource.data.readBy.hasAll(resource.data.readBy)
+        && request.resource.data.readBy.hasOnly(resource.data.readBy + [request.auth.uid])
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['readBy', 'updatedAt']);
 
@@ -339,14 +423,20 @@ service cloud.firestore {
       allow read: if canReadCourseContent(resource.data.courseId);
       allow create: if canManageCourse(request.resource.data.courseId)
         && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
-      allow update, delete: if canManageCourse(resource.data.courseId);
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /questionBank/{questionId} {
       allow read: if canManageCourse(resource.data.courseId);
       allow create: if canManageCourse(request.resource.data.courseId)
         && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
-      allow update, delete: if canManageCourse(resource.data.courseId);
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /assessments/{assessmentId} {
@@ -354,14 +444,22 @@ service cloud.firestore {
         || (canReadCourseContent(resource.data.courseId) && resource.data.status == 'published');
       allow create: if canManageCourse(request.resource.data.courseId)
         && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
-      allow update, delete: if canManageCourse(resource.data.courseId);
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /assessmentKeys/{assessmentId} {
       allow read: if canReviewCourse(resource.data.courseId);
       allow create: if canManageCourse(request.resource.data.courseId)
-        && request.resource.data.assessmentId == assessmentId;
-      allow update, delete: if canManageCourse(resource.data.courseId);
+        && request.resource.data.assessmentId == assessmentId
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
+      allow update: if canManageCourse(resource.data.courseId)
+        && request.resource.data.assessmentId == resource.data.assessmentId
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId;
+      allow delete: if canManageCourse(resource.data.courseId);
     }
 
     match /assessmentAttempts/{attemptId} {
@@ -375,21 +473,40 @@ service cloud.firestore {
         && isCourseStudent(request.resource.data.courseId)
         && assessmentData(request.resource.data.assessmentId).courseId == request.resource.data.courseId
         && assessmentData(request.resource.data.assessmentId).status == 'published'
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId
         && request.resource.data.score == null
         && request.resource.data.itemResults == []
+        && request.resource.data.feedback == ''
+        && !('gradedBy' in request.resource.data)
+        && !('gradedAt' in request.resource.data)
         && request.resource.data.status == 'submitted';
 
-      allow update: if canReviewCourse(resource.data.courseId);
+      allow update: if canReviewCourse(resource.data.courseId)
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.assessmentId == resource.data.assessmentId
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.schoolId == resource.data.schoolId
+        && request.resource.data.answers == resource.data.answers;
       allow delete: if isOwner() || canManageCourse(resource.data.courseId);
     }
 
     match /interventions/{interventionId} {
       allow read: if canReadIntervention(resource.data);
       allow create: if canCreateIntervention(request.resource.data)
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update: if canReadIntervention(resource.data);
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if canReadIntervention(resource.data)
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.schoolId == resource.data.schoolId
+        && request.resource.data.courseId == resource.data.courseId
+        && request.resource.data.createdBy == resource.data.createdBy;
       allow delete: if isOwner()
         || (hasRole(['district_admin', 'school_admin']) && belongsToSchool(resource.data.schoolId));
+    }
+
+    match /platformConfig/{configId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isOwner();
     }
 
     match /featureFlags/{flagId} {
@@ -404,7 +521,8 @@ service cloud.firestore {
     match /auditLogs/{logId} {
       allow create: if signedIn()
         && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.actorEmail == authEmail();
+        && request.resource.data.actorEmail == authEmail()
+        && request.resource.data.createdAt == request.time;
       allow read, update, delete: if isOwner();
     }
 
