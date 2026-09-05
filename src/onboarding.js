@@ -23,10 +23,13 @@ function toast(message, type = '') {
   window.setTimeout(() => node.remove(), 4600);
 }
 
-async function currentProfile() {
+async function currentProfile(retries = 8) {
   if (!auth.currentUser) return null;
   const snap = await getDoc(doc(db, 'users', auth.currentUser.uid));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (snap.exists()) return { id: snap.id, ...snap.data() };
+  if (retries <= 0) return null;
+  await new Promise((resolve) => window.setTimeout(resolve, 180));
+  return currentProfile(retries - 1);
 }
 
 async function hasInvite() {
