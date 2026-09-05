@@ -109,6 +109,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/assignments/$(assignmentId)).data;
     }
 
+    function assessmentData(assessmentId) {
+      return get(/databases/$(database)/documents/assessments/$(assessmentId)).data;
+    }
+
     function isCourseTeacher(courseId) {
       return signedIn()
         && request.auth.uid in courseData(courseId).teacherIds;
@@ -150,6 +154,25 @@ service cloud.firestore {
         || isCourseTeacher(courseId)
         || isCourseStudent(courseId)
         || isGuardianForCourse(courseId);
+    }
+
+    function canReadIntervention(data) {
+      return isOwner()
+        || (hasRole(['district_admin', 'school_admin', 'counselor'])
+          && belongsToSchool(data.schoolId))
+        || (hasRole(['teacher'])
+          && data.courseId != ''
+          && isCourseTeacher(data.courseId));
+    }
+
+    function canCreateIntervention(data) {
+      return isOwner()
+        || (hasRole(['district_admin', 'school_admin', 'counselor'])
+          && belongsToSchool(data.schoolId))
+        || (hasRole(['teacher'])
+          && data.courseId != ''
+          && isCourseTeacher(data.courseId)
+          && data.studentId in courseData(data.courseId).studentIds);
     }
 
     match /users/{uid} {
@@ -231,10 +254,8 @@ service cloud.firestore {
 
     match /assignments/{assignmentId} {
       allow read: if canReadCourseContent(resource.data.courseId);
-
       allow create: if canManageCourse(request.resource.data.courseId)
         && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
-
       allow update, delete: if canManageCourse(resource.data.courseId);
     }
 
@@ -312,6 +333,63 @@ service cloud.firestore {
 
       allow delete: if isOwner()
         || (signedIn() && resource.data.senderId == request.auth.uid);
+    }
+
+    match /standards/{standardId} {
+      allow read: if canReadCourseContent(resource.data.courseId);
+      allow create: if canManageCourse(request.resource.data.courseId)
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
+      allow update, delete: if canManageCourse(resource.data.courseId);
+    }
+
+    match /questionBank/{questionId} {
+      allow read: if canManageCourse(resource.data.courseId);
+      allow create: if canManageCourse(request.resource.data.courseId)
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
+      allow update, delete: if canManageCourse(resource.data.courseId);
+    }
+
+    match /assessments/{assessmentId} {
+      allow read: if canManageCourse(resource.data.courseId)
+        || (canReadCourseContent(resource.data.courseId) && resource.data.status == 'published');
+      allow create: if canManageCourse(request.resource.data.courseId)
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
+      allow update, delete: if canManageCourse(resource.data.courseId);
+    }
+
+    match /assessmentKeys/{assessmentId} {
+      allow read: if canReviewCourse(resource.data.courseId);
+      allow create: if canManageCourse(request.resource.data.courseId)
+        && request.resource.data.assessmentId == assessmentId;
+      allow update, delete: if canManageCourse(resource.data.courseId);
+    }
+
+    match /assessmentAttempts/{attemptId} {
+      allow read: if isOwner()
+        || canReviewCourse(resource.data.courseId)
+        || (signedIn() && resource.data.studentId == request.auth.uid)
+        || isGuardianForStudent(resource.data.studentId);
+
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && isCourseStudent(request.resource.data.courseId)
+        && assessmentData(request.resource.data.assessmentId).courseId == request.resource.data.courseId
+        && assessmentData(request.resource.data.assessmentId).status == 'published'
+        && request.resource.data.score == null
+        && request.resource.data.itemResults == []
+        && request.resource.data.status == 'submitted';
+
+      allow update: if canReviewCourse(resource.data.courseId);
+      allow delete: if isOwner() || canManageCourse(resource.data.courseId);
+    }
+
+    match /interventions/{interventionId} {
+      allow read: if canReadIntervention(resource.data);
+      allow create: if canCreateIntervention(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if canReadIntervention(resource.data);
+      allow delete: if isOwner()
+        || (hasRole(['district_admin', 'school_admin']) && belongsToSchool(resource.data.schoolId));
     }
 
     match /featureFlags/{flagId} {
