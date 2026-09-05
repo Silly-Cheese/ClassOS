@@ -11,6 +11,8 @@ const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({
 const emailKey = (value = '') => String(value).trim().toLowerCase();
 const isOwner = () => !!auth.currentUser?.emailVerified && emailKey(auth.currentUser?.email) === OWNER_EMAIL;
 
+let renderQueued = false;
+
 function toast(message, type = '') {
   const region = $('toast-region');
   if (!region) return;
@@ -43,11 +45,16 @@ function normalizeTerm(term = {}) {
 }
 
 async function loadConfig() {
-  const snapshot = await getDoc(doc(db, 'system', 'config'));
-  return snapshot.exists() ? snapshot.data() : {};
+  try {
+    const snapshot = await getDoc(doc(db, 'system', 'config'));
+    return snapshot.exists() ? snapshot.data() : {};
+  } catch (error) {
+    console.warn('Could not load term fallback data', error);
+    return {};
+  }
 }
 
-async function loadTerms() {
+async function loadFallbackTerms() {
   if (!isOwner()) return [];
   const config = await loadConfig();
   const records = Array.isArray(config.termRecords) ? config.termRecords : [];
@@ -60,7 +67,27 @@ async function loadTerms() {
   return [...map.values()];
 }
 
-async function saveTerms(terms) {
+async function loadStoredTerms() {
+  if (!isOwner()) return [];
+  try {
+    const snapshot = await getDocs(collection(db, 'terms'));
+    return snapshot.docs.map((item) => normalizeTerm({ id: item.id, ...item.data() }));
+  } catch (error) {
+    console.warn('Could not load the terms collection', error);
+    return [];
+  }
+}
+
+async function loadTerms() {
+  if (!isOwner()) return [];
+  const [stored, fallback] = await Promise.all([loadStoredTerms(), loadFallbackTerms()]);
+  const map = new Map();
+  stored.forEach((term) => map.set(term.id, term));
+  fallback.forEach((term) => map.set(term.id, term));
+  return [...map.values()];
+}
+
+async function saveFallbackTerms(terms) {
   if (!isOwner()) throw new Error('You do not have permission to manage terms.');
   const cleaned = terms.map(normalizeTerm);
   await setDoc(doc(db, 'system', 'config'), {
@@ -69,6 +96,57 @@ async function saveTerms(terms) {
     termsUpdatedAt: serverTimestamp()
   }, { merge: true });
   return cleaned;
+}
+
+async function writeTermDocument(term) {
+  const cleaned = normalizeTerm(term);
+  await setDoc(doc(db, 'terms', cleaned.id), {
+    schoolId: cleaned.schoolId,
+    organizationId: cleaned.organizationId,
+    name: cleaned.name,
+    startDate: cleaned.startDate,
+    endDate: cleaned.endDate,
+    status: cleaned.status,
+    createdBy: cleaned.createdBy,
+    createdAt: cleaned.createdAt,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+async function persistTerm(term) {
+  const cleaned = normalizeTerm(term);
+  const fallback = await loadFallbackTerms();
+  const nextFallback = fallback.filter((item) => item.id !== cleaned.id);
+  nextFallback.push(cleaned);
+
+  // Write the fallback first. This makes owner term creation durable even if
+  // the live Firebase rules have not caught up with the repository yet.
+  await saveFallbackTerms(nextFallback);
+
+  try {
+    await writeTermDocument(cleaned);
+    await saveFallbackTerms(nextFallback.filter((item) => item.id !== cleaned.id));
+    return { ...cleaned, persistedToTerms: true };
+  } catch (error) {
+    if (error?.code !== 'permission-denied') console.warn('Primary term write failed; fallback retained', error);
+    return { ...cleaned, persistedToTerms: false };
+  }
+}
+
+async function migrateFallbackTerms() {
+  if (!isOwner()) return;
+  const fallback = await loadFallbackTerms();
+  if (!fallback.length) return;
+  const remaining = [];
+  for (const term of fallback) {
+    try {
+      await writeTermDocument(term);
+    } catch (error) {
+      remaining.push(term);
+      if (error?.code !== 'permission-denied') console.warn('Term migration failed', error);
+    }
+  }
+  if (remaining.length !== fallback.length) await saveFallbackTerms(remaining);
 }
 
 async function loadSchools() {
@@ -104,7 +182,7 @@ function closeModal() {
 
 async function showTermForm(term = null) {
   if (!isOwner()) return;
-  let schools;
+  let schools = [];
   try {
     schools = await loadSchools();
   } catch (error) {
@@ -162,7 +240,8 @@ async function showTermForm(term = null) {
 }
 
 async function saveForm(form, button = null) {
-  if (!form) throw new Error('The term form could not be found.');
+  if (!form) return;
+  if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
   if (button) {
     button.disabled = true;
     button.dataset.label = button.textContent;
@@ -170,7 +249,6 @@ async function saveForm(form, button = null) {
   }
 
   try {
-    if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
     const data = Object.fromEntries(new FormData(form));
     const schoolId = String(data.lockedSchoolId || data.schoolId || '');
     const name = String(data.name || '').trim();
@@ -179,7 +257,6 @@ async function saveForm(form, button = null) {
     const status = ['upcoming', 'active', 'closed'].includes(data.status) ? data.status : 'upcoming';
     const start = new Date(`${startDate}T00:00:00`);
     const end = new Date(`${endDate}T00:00:00`);
-
     if (!schoolId || !name || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
       throw new Error('Check the term name and dates.');
     }
@@ -190,6 +267,13 @@ async function saveForm(form, button = null) {
     const terms = await loadTerms();
     const existing = terms.find((item) => item.id === data.id);
     const id = existing?.id || newId();
+
+    if (status === 'active') {
+      const otherActive = terms.filter((item) => item.schoolId === schoolId && item.id !== id && item.status === 'active');
+      for (const item of otherActive) {
+        await persistTerm(normalizeTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() }));
+      }
+    }
 
     const term = normalizeTerm({
       ...existing,
@@ -206,14 +290,7 @@ async function saveForm(form, button = null) {
       updatedAt: new Date().toISOString()
     });
 
-    let next = terms.filter((item) => item.id !== id);
-    if (status === 'active') {
-      next = next.map((item) => item.schoolId === schoolId && item.status === 'active'
-        ? normalizeTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() })
-        : item);
-    }
-    next.push(term);
-    await saveTerms(next);
+    await persistTerm(term);
     closeModal();
     toast('Term saved.', 'success');
     await renderTerms();
@@ -232,13 +309,10 @@ async function activateTerm(id) {
   const terms = await loadTerms();
   const selected = terms.find((item) => item.id === id);
   if (!selected) return;
-  const next = terms.map((item) => {
-    if (item.schoolId !== selected.schoolId) return item;
-    if (item.id === id) return normalizeTerm({ ...item, status: 'active', updatedAt: new Date().toISOString() });
-    if (item.status === 'active') return normalizeTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() });
-    return item;
-  });
-  await saveTerms(next);
+  for (const item of terms.filter((term) => term.schoolId === selected.schoolId && term.id !== id && term.status === 'active')) {
+    await persistTerm(normalizeTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() }));
+  }
+  await persistTerm(normalizeTerm({ ...selected, status: 'active', updatedAt: new Date().toISOString() }));
   toast('Active term updated.', 'success');
   await renderTerms();
 }
@@ -275,71 +349,65 @@ async function renderTerms() {
   section.appendChild(wrap);
 }
 
-function scheduleOperationsRender() {
-  window.setTimeout(() => renderTerms().catch(console.warn), 75);
-  window.setTimeout(() => renderTerms().catch(console.warn), 300);
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  window.setTimeout(async () => {
+    renderQueued = false;
+    try { await renderTerms(); } catch (error) { console.warn('Could not render terms', error); }
+  }, 80);
 }
 
-// Absolute safety net: neither term form may ever trigger a browser navigation.
+// Any term form in ClassOS is prevented from performing native browser navigation.
 document.addEventListener('submit', (event) => {
-  if (event.target?.id === 'terms-form' || event.target?.id === 'p4-term-form') {
-    event.preventDefault();
-  }
+  if (event.target?.id === 'terms-form' || event.target?.id === 'p4-term-form') event.preventDefault();
 }, true);
 
 document.addEventListener('click', async (event) => {
+  if (!isOwner()) return;
+
   const p4Action = event.target.closest('[data-p4-action]');
-  if (p4Action?.dataset.p4Action === 'new-term' && isOwner()) {
+  if (p4Action && ['new-term', 'edit-term', 'activate-term'].includes(p4Action.dataset.p4Action)) {
     event.preventDefault();
     event.stopImmediatePropagation();
-    await showTermForm();
+    const action = p4Action.dataset.p4Action;
+    if (action === 'new-term') {
+      await showTermForm();
+      return;
+    }
+    const terms = await loadTerms();
+    const term = terms.find((item) => item.id === p4Action.dataset.id);
+    if (!term) return;
+    if (action === 'edit-term') await showTermForm(term);
+    else await activateTerm(term.id);
     return;
   }
-
-  if (event.target.closest('.p4-nav')) scheduleOperationsRender();
 
   const action = event.target.closest('[data-terms-action]');
-  if (!action || !isOwner()) return;
+  if (!action) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-
   const type = action.dataset.termsAction;
-  if (type === 'cancel') {
-    closeModal();
-    return;
-  }
-  if (type === 'save') {
-    await saveForm(action.closest('form'), action);
-    return;
-  }
+  if (type === 'cancel') closeModal();
+  if (type === 'save') await saveForm(action.closest('form'), action);
   if (type === 'edit') {
     const terms = await loadTerms();
     const term = terms.find((item) => item.id === action.dataset.id);
     if (term) await showTermForm(term);
-    return;
   }
-  if (type === 'activate') {
-    await activateTerm(action.dataset.id);
-  }
+  if (type === 'activate') await activateTerm(action.dataset.id);
 }, true);
 
-document.addEventListener('submit', async (event) => {
-  if (!isOwner()) return;
-  if (event.target?.id !== 'terms-form' && event.target?.id !== 'p4-term-form') return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  const button = event.target.querySelector('button[type="submit"], [data-terms-action="save"]');
-  await saveForm(event.target, button);
-}, true);
+const content = $('page-content');
+if (content) {
+  // Watch only direct page replacements. Term table changes happen deeper in
+  // the tree and therefore cannot trigger this observer recursively.
+  const observer = new MutationObserver(() => scheduleRender());
+  observer.observe(content, { childList: true, subtree: false });
+}
 
 onAuthStateChanged(auth, async (user) => {
   if (!user || !isOwner()) return;
-  try {
-    const config = await loadConfig();
-    const existing = await loadTerms();
-    if (!Array.isArray(config.termRecords) && existing.length) await saveTerms(existing);
-    scheduleOperationsRender();
-  } catch (error) {
-    console.warn('Term setup could not finish', error);
-  }
+  await migrateFallbackTerms();
+  scheduleRender();
 });
