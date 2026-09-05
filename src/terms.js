@@ -11,9 +11,6 @@ const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({
 const emailKey = (value = '') => String(value).trim().toLowerCase();
 const isOwner = () => !!auth.currentUser?.emailVerified && emailKey(auth.currentUser?.email) === OWNER_EMAIL;
 
-let ready = false;
-let renderQueued = false;
-
 function toast(message, type = '') {
   const region = $('toast-region');
   if (!region) return;
@@ -29,43 +26,43 @@ function newId() {
   return `term_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function normalizeTerm(term = {}) {
+  return {
+    id: String(term.id || newId()),
+    schoolId: String(term.schoolId || ''),
+    schoolName: String(term.schoolName || 'School'),
+    organizationId: String(term.organizationId || ''),
+    name: String(term.name || '').trim(),
+    startDate: String(term.startDate || ''),
+    endDate: String(term.endDate || ''),
+    status: ['upcoming', 'active', 'closed'].includes(term.status) ? term.status : 'upcoming',
+    createdBy: String(term.createdBy || auth.currentUser?.uid || ''),
+    createdAt: String(term.createdAt || new Date().toISOString()),
+    updatedAt: String(term.updatedAt || new Date().toISOString())
+  };
+}
+
 async function loadConfig() {
   const snapshot = await getDoc(doc(db, 'system', 'config'));
   return snapshot.exists() ? snapshot.data() : {};
 }
 
-function normalizedTerm(term) {
-  return {
-    id: String(term?.id || newId()),
-    schoolId: String(term?.schoolId || ''),
-    schoolName: String(term?.schoolName || 'School'),
-    organizationId: String(term?.organizationId || ''),
-    name: String(term?.name || '').trim(),
-    startDate: String(term?.startDate || ''),
-    endDate: String(term?.endDate || ''),
-    status: ['upcoming', 'active', 'closed'].includes(term?.status) ? term.status : 'upcoming',
-    createdBy: String(term?.createdBy || auth.currentUser?.uid || ''),
-    createdAt: String(term?.createdAt || new Date().toISOString()),
-    updatedAt: String(term?.updatedAt || new Date().toISOString())
-  };
-}
-
-async function loadOwnerTerms() {
+async function loadTerms() {
   if (!isOwner()) return [];
   const config = await loadConfig();
-  const current = Array.isArray(config.termRecords) ? config.termRecords : [];
-  const previous = Array.isArray(config.compatTerms) ? config.compatTerms : [];
+  const records = Array.isArray(config.termRecords) ? config.termRecords : [];
+  const legacy = Array.isArray(config.compatTerms) ? config.compatTerms : [];
   const map = new Map();
-  [...previous, ...current].forEach((item) => {
-    const term = normalizedTerm(item);
+  [...legacy, ...records].forEach((item) => {
+    const term = normalizeTerm(item);
     if (term.id && term.name) map.set(term.id, term);
   });
   return [...map.values()];
 }
 
-async function saveOwnerTerms(terms) {
-  if (!isOwner()) throw new Error('Term management is only available to the Platform Owner here.');
-  const cleaned = terms.map(normalizedTerm);
+async function saveTerms(terms) {
+  if (!isOwner()) throw new Error('You do not have permission to manage terms.');
+  const cleaned = terms.map(normalizeTerm);
   await setDoc(doc(db, 'system', 'config'), {
     termRecords: cleaned,
     compatTerms: [],
@@ -100,7 +97,9 @@ function ensureModal() {
 
 function closeModal() {
   $('terms-modal')?.classList.add('hidden');
+  $('p4-modal')?.classList.add('hidden');
   if ($('terms-modal-body')) $('terms-modal-body').innerHTML = '';
+  if ($('p4-modal-body')) $('p4-modal-body').innerHTML = '';
 }
 
 async function showTermForm(term = null) {
@@ -122,7 +121,7 @@ async function showTermForm(term = null) {
   const modal = ensureModal();
   $('terms-modal-title').textContent = term ? 'Edit term' : 'Create term';
   $('terms-modal-body').innerHTML = `
-    <form id="terms-form">
+    <form id="terms-form" onsubmit="return false;">
       <input type="hidden" name="id" value="${esc(term?.id || '')}">
       <div class="form-grid">
         <div class="field span-2">
@@ -155,93 +154,105 @@ async function showTermForm(term = null) {
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-terms-action="cancel">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save term</button>
+        <button type="button" class="btn btn-primary" data-terms-action="save">Save term</button>
       </div>
     </form>`;
   modal.classList.remove('hidden');
   window.setTimeout(() => $('terms-modal-body')?.querySelector('input[name="name"]')?.focus(), 0);
 }
 
-async function saveForm(form) {
-  const data = Object.fromEntries(new FormData(form));
-  const schoolId = String(data.lockedSchoolId || data.schoolId || '');
-  const name = String(data.name || '').trim();
-  const startDate = String(data.startDate || '');
-  const endDate = String(data.endDate || '');
-  const status = ['upcoming', 'active', 'closed'].includes(data.status) ? data.status : 'upcoming';
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
-  if (!schoolId || !name || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
-    throw new Error('Check the term name and dates.');
+async function saveForm(form, button = null) {
+  if (!form) throw new Error('The term form could not be found.');
+  if (button) {
+    button.disabled = true;
+    button.dataset.label = button.textContent;
+    button.textContent = 'Saving…';
   }
 
-  const schoolSnapshot = await getDoc(doc(db, 'schools', schoolId));
-  if (!schoolSnapshot.exists()) throw new Error('That school could not be found.');
-  const school = schoolSnapshot.data();
-  const terms = await loadOwnerTerms();
-  const existing = terms.find((item) => item.id === data.id);
-  const id = existing?.id || newId();
-  const term = normalizedTerm({
-    ...existing,
-    id,
-    schoolId,
-    schoolName: school.name || 'School',
-    organizationId: school.organizationId || '',
-    name,
-    startDate,
-    endDate,
-    status,
-    createdBy: existing?.createdBy || auth.currentUser.uid,
-    createdAt: existing?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  });
+  try {
+    if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
+    const data = Object.fromEntries(new FormData(form));
+    const schoolId = String(data.lockedSchoolId || data.schoolId || '');
+    const name = String(data.name || '').trim();
+    const startDate = String(data.startDate || '');
+    const endDate = String(data.endDate || '');
+    const status = ['upcoming', 'active', 'closed'].includes(data.status) ? data.status : 'upcoming';
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
 
-  let next = terms.filter((item) => item.id !== id);
-  if (status === 'active') {
-    next = next.map((item) => item.schoolId === schoolId && item.status === 'active'
-      ? normalizedTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() })
-      : item);
+    if (!schoolId || !name || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      throw new Error('Check the term name and dates.');
+    }
+
+    const schoolSnapshot = await getDoc(doc(db, 'schools', schoolId));
+    if (!schoolSnapshot.exists()) throw new Error('That school could not be found.');
+    const school = schoolSnapshot.data();
+    const terms = await loadTerms();
+    const existing = terms.find((item) => item.id === data.id);
+    const id = existing?.id || newId();
+
+    const term = normalizeTerm({
+      ...existing,
+      id,
+      schoolId,
+      schoolName: school.name || 'School',
+      organizationId: school.organizationId || '',
+      name,
+      startDate,
+      endDate,
+      status,
+      createdBy: existing?.createdBy || auth.currentUser.uid,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    let next = terms.filter((item) => item.id !== id);
+    if (status === 'active') {
+      next = next.map((item) => item.schoolId === schoolId && item.status === 'active'
+        ? normalizeTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() })
+        : item);
+    }
+    next.push(term);
+    await saveTerms(next);
+    closeModal();
+    toast('Term saved.', 'success');
+    await renderTerms();
+  } catch (error) {
+    console.error(error);
+    toast(error?.message || 'Could not save the term.', 'error');
+  } finally {
+    if (button && document.body.contains(button)) {
+      button.disabled = false;
+      button.textContent = button.dataset.label || 'Save term';
+    }
   }
-  next.push(term);
-  await saveOwnerTerms(next);
-  closeModal();
-  toast('Term saved.', 'success');
-  await renderOwnerTerms();
 }
 
 async function activateTerm(id) {
-  const terms = await loadOwnerTerms();
+  const terms = await loadTerms();
   const selected = terms.find((item) => item.id === id);
   if (!selected) return;
   const next = terms.map((item) => {
     if (item.schoolId !== selected.schoolId) return item;
-    if (item.id === id) return normalizedTerm({ ...item, status: 'active', updatedAt: new Date().toISOString() });
-    if (item.status === 'active') return normalizedTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() });
+    if (item.id === id) return normalizeTerm({ ...item, status: 'active', updatedAt: new Date().toISOString() });
+    if (item.status === 'active') return normalizeTerm({ ...item, status: 'closed', updatedAt: new Date().toISOString() });
     return item;
   });
-  await saveOwnerTerms(next);
+  await saveTerms(next);
   toast('Active term updated.', 'success');
-  await renderOwnerTerms();
+  await renderTerms();
 }
 
-async function renderOwnerTerms() {
-  if (!ready || !isOwner() || $('page-title')?.textContent !== 'Operations') return;
-  let terms;
-  try {
-    terms = await loadOwnerTerms();
-  } catch (error) {
-    console.error(error);
-    return;
-  }
-
-  const heading = [...document.querySelectorAll('#page-content h3')].find((node) => ['Terms', 'Terms & school years'].includes(node.textContent.trim()));
+async function renderTerms() {
+  if (!isOwner() || $('page-title')?.textContent !== 'Operations') return;
+  const terms = await loadTerms();
+  const heading = [...document.querySelectorAll('#page-content h3')]
+    .find((node) => ['Terms', 'Terms & school years'].includes(node.textContent.trim()));
   const section = heading?.closest('section');
   if (!section) return;
 
-  const existingTable = section.querySelector('.table-wrap');
-  const existingEmpty = section.querySelector('.empty-state');
-  if (existingTable) existingTable.remove();
-  if (existingEmpty) existingEmpty.remove();
+  section.querySelector('.table-wrap')?.remove();
+  section.querySelector('.empty-state')?.remove();
 
   if (!terms.length) {
     const empty = document.createElement('div');
@@ -259,94 +270,75 @@ async function renderOwnerTerms() {
       <td><span class="row-title">${esc(term.name)}</span><span class="row-subtitle">${esc(term.schoolName || 'School')}</span></td>
       <td>${esc(term.startDate || '—')} → ${esc(term.endDate || '—')}</td>
       <td><span class="pill ${term.status === 'active' ? 'success' : term.status === 'upcoming' ? 'info' : ''}">${esc(term.status)}</span></td>
-      <td><div class="row-actions">${term.status !== 'active' ? `<button class="pill clickable info" data-terms-action="activate" data-id="${esc(term.id)}">Activate</button>` : ''}<button class="pill clickable" data-terms-action="edit" data-id="${esc(term.id)}">Edit</button></div></td>
+      <td><div class="row-actions">${term.status !== 'active' ? `<button type="button" class="pill clickable info" data-terms-action="activate" data-id="${esc(term.id)}">Activate</button>` : ''}<button type="button" class="pill clickable" data-terms-action="edit" data-id="${esc(term.id)}">Edit</button></div></td>
     </tr>`).join('')}</tbody></table>`;
   section.appendChild(wrap);
 }
 
-function scheduleRender() {
-  if (renderQueued) return;
-  renderQueued = true;
-  window.setTimeout(async () => {
-    renderQueued = false;
-    await renderOwnerTerms();
-  }, 0);
+function scheduleOperationsRender() {
+  window.setTimeout(() => renderTerms().catch(console.warn), 75);
+  window.setTimeout(() => renderTerms().catch(console.warn), 300);
 }
 
-document.addEventListener('click', async (event) => {
-  if (!ready || !isOwner()) return;
-
-  const productionAction = event.target.closest('[data-p4-action]');
-  if (productionAction) {
-    const action = productionAction.dataset.p4Action;
-    if (action === 'new-term') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      await showTermForm();
-      return;
-    }
-    if (action === 'edit-term' || action === 'activate-term') {
-      const terms = await loadOwnerTerms();
-      const term = terms.find((item) => item.id === productionAction.dataset.id);
-      if (term) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (action === 'edit-term') await showTermForm(term);
-        else await activateTerm(term.id);
-        return;
-      }
-    }
+// Absolute safety net: neither term form may ever trigger a browser navigation.
+document.addEventListener('submit', (event) => {
+  if (event.target?.id === 'terms-form' || event.target?.id === 'p4-term-form') {
+    event.preventDefault();
   }
+}, true);
+
+document.addEventListener('click', async (event) => {
+  const p4Action = event.target.closest('[data-p4-action]');
+  if (p4Action?.dataset.p4Action === 'new-term' && isOwner()) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    await showTermForm();
+    return;
+  }
+
+  if (event.target.closest('.p4-nav')) scheduleOperationsRender();
 
   const action = event.target.closest('[data-terms-action]');
-  if (!action) return;
+  if (!action || !isOwner()) return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if (action.dataset.termsAction === 'cancel') closeModal();
-  if (action.dataset.termsAction === 'edit') {
-    const terms = await loadOwnerTerms();
+
+  const type = action.dataset.termsAction;
+  if (type === 'cancel') {
+    closeModal();
+    return;
+  }
+  if (type === 'save') {
+    await saveForm(action.closest('form'), action);
+    return;
+  }
+  if (type === 'edit') {
+    const terms = await loadTerms();
     const term = terms.find((item) => item.id === action.dataset.id);
     if (term) await showTermForm(term);
+    return;
   }
-  if (action.dataset.termsAction === 'activate') await activateTerm(action.dataset.id);
+  if (type === 'activate') {
+    await activateTerm(action.dataset.id);
+  }
 }, true);
 
 document.addEventListener('submit', async (event) => {
-  if (!ready || !isOwner() || event.target.id !== 'terms-form') return;
+  if (!isOwner()) return;
+  if (event.target?.id !== 'terms-form' && event.target?.id !== 'p4-term-form') return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  const button = event.target.querySelector('button[type="submit"]');
-  if (button) {
-    button.disabled = true;
-    button.dataset.label = button.textContent;
-    button.textContent = 'Saving…';
-  }
-  try {
-    await saveForm(event.target);
-  } catch (error) {
-    console.error(error);
-    toast(error?.message || 'Could not save the term.', 'error');
-    if (button) {
-      button.disabled = false;
-      button.textContent = button.dataset.label || 'Save term';
-    }
-  }
+  const button = event.target.querySelector('button[type="submit"], [data-terms-action="save"]');
+  await saveForm(event.target, button);
 }, true);
 
-const content = $('page-content');
-if (content) {
-  const observer = new MutationObserver(() => scheduleRender());
-  observer.observe(content, { childList: true });
-}
-
 onAuthStateChanged(auth, async (user) => {
-  ready = !!user && isOwner();
-  if (!ready) return;
+  if (!user || !isOwner()) return;
   try {
-    const terms = await loadOwnerTerms();
     const config = await loadConfig();
-    if (!Array.isArray(config.termRecords) && terms.length) await saveOwnerTerms(terms);
-    scheduleRender();
+    const existing = await loadTerms();
+    if (!Array.isArray(config.termRecords) && existing.length) await saveTerms(existing);
+    scheduleOperationsRender();
   } catch (error) {
     console.warn('Term setup could not finish', error);
   }
