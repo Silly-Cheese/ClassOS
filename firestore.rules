@@ -11,8 +11,6 @@ service cloud.firestore {
         : '';
     }
 
-    // ClassOS does not require Firebase email verification. Keep this helper
-    // as a compatibility alias for older rule logic.
     function emailVerified() {
       return signedIn();
     }
@@ -228,6 +226,37 @@ service cloud.firestore {
         && request.auth.uid in courseData(courseId).studentIds;
     }
 
+    function validTeacherStudentInvite(email, data) {
+      return hasRole(['teacher'])
+        && data.email == email
+        && data.role == 'student'
+        && data.status == 'active'
+        && data.invitedBy == request.auth.uid
+        && data.invitedByRole == 'teacher'
+        && data.schoolId in ownProfile().schoolIds
+        && data.organizationId == schoolData(data.schoolId).organizationId
+        && data.courseId != ''
+        && courseData(data.courseId).schoolId == data.schoolId
+        && courseData(data.courseId).organizationId == data.organizationId
+        && request.auth.uid in courseData(data.courseId).teacherIds;
+    }
+
+    function validInvitedStudentEnrollment(courseId) {
+      return signedIn()
+        && ownProfile().status == 'active'
+        && ownProfile().role == 'student'
+        && hasActiveInvite()
+        && get(invitePath()).data.role == 'student'
+        && get(invitePath()).data.courseId == courseId
+        && get(invitePath()).data.schoolId == resource.data.schoolId
+        && get(invitePath()).data.organizationId == resource.data.organizationId
+        && !(request.auth.uid in resource.data.studentIds)
+        && request.auth.uid in request.resource.data.studentIds
+        && request.resource.data.studentIds.size() == resource.data.studentIds.size() + 1
+        && request.resource.data.studentIds.hasAll(resource.data.studentIds)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentIds', 'updatedAt']);
+    }
+
     function isGuardianForCourse(courseId) {
       return hasRole(['guardian'])
         && courseData(courseId).studentIds.hasAny(ownProfile().linkedStudentIds);
@@ -345,12 +374,24 @@ service cloud.firestore {
       allow get: if isOwner()
         || (signedIn() && email == authEmail());
       allow list: if isOwner();
-      allow create, update: if isOwner()
-        && request.resource.data.email == email
-        && request.resource.data.role in [
-          'student', 'teacher', 'guardian', 'staff', 'counselor',
-          'school_admin', 'district_admin'
-        ];
+      allow create: if (isOwner()
+          && request.resource.data.email == email
+          && request.resource.data.role in [
+            'student', 'teacher', 'guardian', 'staff', 'counselor',
+            'school_admin', 'district_admin'
+          ])
+        || validTeacherStudentInvite(email, request.resource.data);
+      allow update: if (isOwner()
+          && request.resource.data.email == email
+          && request.resource.data.role in [
+            'student', 'teacher', 'guardian', 'staff', 'counselor',
+            'school_admin', 'district_admin'
+          ])
+        || (validTeacherStudentInvite(email, request.resource.data)
+          && resource.data.email == email
+          && resource.data.role == 'student'
+          && resource.data.invitedBy == request.auth.uid
+          && resource.data.courseId == request.resource.data.courseId);
       allow delete: if isOwner();
     }
 
@@ -438,7 +479,8 @@ service cloud.firestore {
         || (hasRole(['teacher'])
           && request.auth.uid in resource.data.teacherIds
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['gradeCategories', 'updatedAt']));
+            .hasOnly(['gradeCategories', 'updatedAt']))
+        || validInvitedStudentEnrollment(courseId);
 
       allow delete: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
