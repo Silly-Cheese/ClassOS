@@ -2,8 +2,7 @@ import { auth, db, googleProvider, OWNER_EMAIL } from './firebase.js';
 import { createLms } from './lms.js';
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup,
-  sendPasswordResetEmail, sendEmailVerification, signOut, onAuthStateChanged,
-  updateProfile, reload
+  sendPasswordResetEmail, signOut, onAuthStateChanged, updateProfile
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
@@ -103,7 +102,7 @@ async function logAction(action, targetType = 'system', targetId = null, details
 }
 
 async function invitationFor(user) {
-  if (!user?.email || !user.emailVerified) return null;
+  if (!user?.email) return null;
   const snapshot = await getDoc(doc(db, 'invitations', emailKey(user.email)));
   return snapshot.exists() && snapshot.data().status === 'active' ? snapshot.data() : null;
 }
@@ -119,7 +118,7 @@ async function ensureProfile(user) {
     lastLoginAt: serverTimestamp()
   };
 
-  if (mail === OWNER_EMAIL && user.emailVerified) {
+  if (mail === OWNER_EMAIL) {
     await setDoc(ref, {
       ...base,
       role: OWNER_ROLE,
@@ -145,7 +144,7 @@ async function ensureProfile(user) {
       guardianIds: [],
       createdAt: serverTimestamp()
     });
-  } else if (existing.data().status === 'pending' && user.emailVerified) {
+  } else if (existing.data().status === 'pending') {
     const invite = await invitationFor(user);
     if (invite) {
       await setDoc(ref, {
@@ -261,9 +260,7 @@ async function emailAuth(event) {
     if (state.mode === 'signup') {
       const result = await createUserWithEmailAndPassword(auth, mail, password);
       await updateProfile(result.user, { displayName: name });
-      await sendEmailVerification(result.user);
-      showVerification(result.user);
-      toast('Account created. Check your email to verify it.', 'success');
+      toast('Account created.', 'success');
     } else {
       await signInWithEmailAndPassword(auth, mail, password);
     }
@@ -300,35 +297,6 @@ async function resetPassword() {
   }
 }
 
-function showVerification(user) {
-  $('app-view').classList.add('hidden');
-  $('auth-view').classList.remove('hidden');
-  const wrap = document.querySelector('.auth-card');
-  wrap.innerHTML = `<div class="mobile-brand brand-lockup"><div class="brand-mark">C</div><span>ClassOS</span></div><div class="auth-heading"><span class="eyebrow">VERIFY YOUR EMAIL</span><h2>Check your inbox.</h2><p>We sent a verification link to <strong>${esc(user.email)}</strong>. ClassOS will not activate invited roles or owner access until the address is verified.</p></div><button id="verified-check" class="btn btn-primary btn-block">I’ve verified my email</button><button id="verification-resend" class="btn btn-secondary btn-block">Resend verification email</button><button id="verification-signout" class="link-button" style="display:block;margin:22px auto 0">Use a different account</button>`;
-  $('verified-check').onclick = async () => {
-    const button = $('verified-check');
-    busy(button, true, 'Checking…');
-    await reload(auth.currentUser);
-    if (auth.currentUser.emailVerified) location.reload();
-    else {
-      toast('That email is not verified yet.', 'error');
-      busy(button, false);
-    }
-  };
-  $('verification-resend').onclick = async () => {
-    try {
-      await sendEmailVerification(auth.currentUser);
-      toast('Verification email sent again.', 'success');
-    } catch (error) {
-      toast(authMessage(error), 'error');
-    }
-  };
-  $('verification-signout').onclick = async () => {
-    await signOut(auth);
-    location.reload();
-  };
-}
-
 function shellProfile() {
   const name = state.profile?.displayName || state.user?.displayName || state.user?.email || 'User';
   $('mini-name').textContent = name;
@@ -350,11 +318,11 @@ function organizationsView() {
 function platformView() {
   if (!isOwner()) return '<div class="empty-state"><strong>Restricted</strong>This area is available to the Platform Owner.</div>';
   const flags = [...state.flags].sort((a, b) => a.key.localeCompare(b.key)).map((flag) => `<div class="list-row"><div class="list-main"><strong>${esc(flag.key.replaceAll('_', ' '))}</strong><span>${esc(flag.description || 'Feature control')}</span></div><button class="pill clickable ${flag.enabled ? 'success' : ''}" data-action="flag" data-id="${esc(flag.id)}" data-enabled="${flag.enabled ? '1' : '0'}">${flag.enabled ? 'Enabled' : 'Disabled'}</button></div>`).join('');
-  return `<div class="toolbar"><div><span class="eyebrow">OWNER CONSOLE</span><h2 style="margin:4px 0 0">Platform controls</h2></div><span class="pill success">Phase 2</span></div><section class="grid grid-2"><div class="card"><div class="section-head"><div><h3>Feature flags</h3><p>Control staged ClassOS modules.</p></div></div><div class="list">${flags}</div></div><div class="card"><div class="section-head"><div><h3>Platform identity</h3></div></div><div class="list"><div class="list-row"><div class="list-main"><strong>Bootstrap owner</strong><span>${OWNER_EMAIL}</span></div><span class="pill success">Protected</span></div><div class="list-row"><div class="list-main"><strong>Firebase project</strong><span>classos-958d3</span></div><span class="pill info">Connected</span></div><div class="list-row"><div class="list-main"><strong>LMS layer</strong><span>Assignments, grades, attendance, messaging, family view</span></div><span class="pill success">Phase 2</span></div></div></div></section>`;
+  return `<div class="toolbar"><div><span class="eyebrow">OWNER</span><h2 style="margin:4px 0 0">Platform controls</h2></div><span class="pill success">Active</span></div><section class="grid grid-2"><div class="card"><div class="section-head"><div><h3>Feature flags</h3><p>Turn platform features on or off.</p></div></div><div class="list">${flags}</div></div><div class="card"><div class="section-head"><div><h3>Platform</h3></div></div><div class="list"><div class="list-row"><div class="list-main"><strong>Owner account</strong><span>${OWNER_EMAIL}</span></div><span class="pill success">Active</span></div><div class="list-row"><div class="list-main"><strong>Firebase project</strong><span>classos-958d3</span></div><span class="pill info">Connected</span></div><div class="list-row"><div class="list-main"><strong>Core school tools</strong><span>Courses, assignments, grades, attendance, messages, and family access</span></div><span class="pill success">Active</span></div></div></div></section>`;
 }
 
 function settingsView() {
-  return `<div class="toolbar"><div><span class="eyebrow">ACCOUNT</span><h2 style="margin:4px 0 0">Settings</h2></div></div><section class="grid grid-2"><div class="card"><div class="list"><div class="list-row"><div class="list-main"><strong>Name</strong><span>${esc(state.profile?.displayName)}</span></div></div><div class="list-row"><div class="list-main"><strong>Email</strong><span>${esc(state.profile?.email)}</span></div><span class="pill success">Verified</span></div><div class="list-row"><div class="list-main"><strong>Role</strong><span>${esc(roleName(state.profile?.role))}</span></div></div></div></div><div class="card"><h3>Session</h3><p class="metric-note">Authentication is managed by Firebase and persists securely in this browser.</p><button class="btn btn-secondary" data-action="logout">Sign out</button></div></section>`;
+  return `<div class="toolbar"><div><span class="eyebrow">ACCOUNT</span><h2 style="margin:4px 0 0">Settings</h2></div></div><section class="grid grid-2"><div class="card"><div class="list"><div class="list-row"><div class="list-main"><strong>Name</strong><span>${esc(state.profile?.displayName)}</span></div></div><div class="list-row"><div class="list-main"><strong>Email</strong><span>${esc(state.profile?.email)}</span></div><span class="pill">Signed in</span></div><div class="list-row"><div class="list-main"><strong>Role</strong><span>${esc(roleName(state.profile?.role))}</span></div></div></div></div><div class="card"><h3>Session</h3><p class="metric-note">Your sign-in stays active in this browser until you sign out.</p><button class="btn btn-secondary" data-action="logout">Sign out</button></div></section>`;
 }
 
 const meta = {
@@ -363,7 +331,7 @@ const meta = {
   attendance: ['Attendance', 'ATTENDANCE'], calendar: ['Calendar', 'PLANNER'],
   inbox: ['Inbox', 'COMMUNICATION'], absent: ['Absent Mode', 'RECOVERY'], family: ['Family', 'FAMILY VIEW'],
   people: ['People', 'DIRECTORY'], organizations: ['Organizations', 'STRUCTURE'],
-  platform: ['Platform', 'OWNER CONSOLE'], settings: ['Settings', 'ACCOUNT']
+  platform: ['Platform', 'OWNER'], settings: ['Settings', 'ACCOUNT']
 };
 
 async function render(route = state.route) {
@@ -418,7 +386,7 @@ function showCourse() {
 }
 
 function showInvite() {
-  openModal('Pre-register user', `<form id="invite-form"><div class="callout info" style="margin-bottom:18px"><strong>Verified identity required:</strong> this role can only be claimed by a Firebase-authenticated user after this exact email is verified.</div><div class="form-grid"><div class="field span-2"><label>Email</label><input name="email" type="email" required></div><div class="field"><label>Role</label><select name="role">${ROLES.map((item) => `<option value="${item}">${roleName(item)}</option>`).join('')}</select></div><div class="field"><label>School (optional)</label><select name="schoolId"><option value="">No school yet</option>${schoolOptions()}</select></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Pre-register</button></div></form>`, 'IDENTITY');
+  openModal('Pre-register user', `<form id="invite-form"><div class="callout info" style="margin-bottom:18px"><strong>Email match required:</strong> this role can only be claimed by a signed-in Firebase account using this exact email address.</div><div class="form-grid"><div class="field span-2"><label>Email</label><input name="email" type="email" required></div><div class="field"><label>Role</label><select name="role">${ROLES.map((item) => `<option value="${item}">${roleName(item)}</option>`).join('')}</select></div><div class="field"><label>School (optional)</label><select name="schoolId"><option value="">No school yet</option>${schoolOptions()}</select></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Pre-register</button></div></form>`, 'IDENTITY');
 }
 
 async function savePhaseOneForm(form) {
@@ -530,7 +498,7 @@ function wire() {
   });
   $('sidebar-open').onclick = () => $('sidebar').classList.add('open');
   $('sidebar-close').onclick = () => $('sidebar').classList.remove('open');
-  $('global-search').onclick = () => openModal('Search ClassOS', '<div class="callout info"><strong>Search is ready for the Phase 3 intelligence pass.</strong><br>For now, use Courses, Assignments, Gradebook, Calendar, and Inbox to navigate current LMS data.</div>', 'SEARCH');
+  $('global-search').onclick = () => openModal('Search ClassOS', '<div class="empty-state"><strong>Search is available from the top bar.</strong>Use it to find courses, assignments, standards, and people you can access.</div>', 'SEARCH');
   document.querySelector('.notification-btn')?.addEventListener('click', () => render('inbox'));
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeModal();
@@ -546,11 +514,6 @@ onAuthStateChanged(auth, async (user) => {
     state.profile = null;
     $('app-view').classList.add('hidden');
     $('auth-view').classList.remove('hidden');
-    return;
-  }
-  const usesPassword = user.providerData.some((provider) => provider.providerId === 'password');
-  if (usesPassword && !user.emailVerified) {
-    showVerification(user);
     return;
   }
 
