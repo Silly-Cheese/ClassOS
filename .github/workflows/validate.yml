@@ -2,7 +2,7 @@ name: Validate ClassOS
 
 on:
   push:
-    branches: [main, phase-3-intelligence]
+    branches: [main, phase-4-production]
   pull_request:
     branches: [main]
 
@@ -10,19 +10,27 @@ permissions:
   contents: read
 
 jobs:
-  syntax:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Validate JavaScript syntax
         run: |
           node --check src/main.js
           node --check src/lms.js
           node --check src/intelligence.js
+          node --check src/production.js
+          node --check src/hardening.js
           node --check src/firebase.js
           node --check service-worker.js
+
+      - name: Validate Firestore Security Rules
+        run: |
+          npx --yes firebase-tools@14 emulators:exec --project demo-classos --only firestore "echo Firestore-rules-compiled"
