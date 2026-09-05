@@ -31,7 +31,11 @@ jobs:
           node --check src/student-assessments.js
           node --check src/firebase.js
           node --check service-worker.js
+          node --check tests/firestore.rules.test.mjs
 
-      - name: Validate Firestore Security Rules
+      - name: Install Firestore rules test dependencies
+        run: npm install --no-save --no-package-lock @firebase/rules-unit-testing firebase
+
+      - name: Validate Firestore rules and authorization regression tests
         run: |
-          npx --yes firebase-tools@14 emulators:exec --project demo-classos --only firestore "echo Firestore-rules-compiled"
+          npx --yes firebase-tools@14 emulators:exec --project demo-classos --only firestore "node tests/firestore.rules.test.mjs"
