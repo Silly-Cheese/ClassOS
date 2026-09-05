@@ -1,0 +1,27 @@
+.manage-page { display: grid; gap: 18px; }
+.manage-hero { display: flex; align-items: end; justify-content: space-between; gap: 18px; flex-wrap: wrap; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+.manage-hero h2 { margin: 5px 0 6px; font-size: 1.6rem; letter-spacing: -.035em; }
+.manage-hero p { margin: 0; color: var(--muted); max-width: 760px; line-height: 1.55; }
+.manage-hero input { width: min(360px, 100%); }
+.manage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.manage-section { padding: 18px; }
+.manage-section .section-head { margin-bottom: 4px; }
+.manage-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.manage-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.manage-row strong, .manage-row span { display: block; }
+.manage-row strong { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; }
+.manage-row span { color: var(--muted); font-size: .74rem; margin-top: 4px; line-height: 1.4; }
+.manage-delete-btn { padding: 8px 11px; white-space: nowrap; }
+.manage-confirm .callout.warning { background: var(--warning-soft); color: var(--warning); border-color: color-mix(in srgb, var(--warning) 35%, var(--line)); }
+.manage-confirm .callout.warning strong { color: var(--warning); }
+.gb-type { display: inline-flex; margin-right: 5px; border-radius: 999px; padding: 2px 5px; font-size: .58rem; letter-spacing: .03em; text-transform: uppercase; vertical-align: 1px; }
+.gb-type.assignment { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+.gb-type.assessment { background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); }
+.gb-readonly { min-width: 118px; text-align: center; }
+.gb-readonly strong { font-size: .8rem; }
+html.theme-dark .manage-hero { background: var(--surface); border-color: var(--line); }
+html.theme-dark .manage-row { border-color: var(--line); }
+html.theme-dark .gb-type.assignment { background: #182235; color: #cbd5e1; border-color: #475569; }
+html.theme-dark .gb-type.assessment { background: #132a46; color: #bfdbfe; border-color: #2d5f91; }
+@media (max-width: 900px) { .manage-grid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .manage-hero { align-items: stretch; } .manage-hero input { width: 100%; } .manage-row { grid-template-columns: 1fr; } .manage-row .btn { width: 100%; } }
