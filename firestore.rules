@@ -38,6 +38,18 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/schools/$(schoolId)).data;
     }
 
+    function organizationData(organizationId) {
+      return get(/databases/$(database)/documents/organizations/$(organizationId)).data;
+    }
+
+    function organizationAfterData(organizationId) {
+      return getAfter(/databases/$(database)/documents/organizations/$(organizationId)).data;
+    }
+
+    function schoolAfterData(schoolId) {
+      return getAfter(/databases/$(database)/documents/schools/$(schoolId)).data;
+    }
+
     function isOwner() {
       return isBootstrapOwner();
     }
@@ -88,6 +100,68 @@ service cloud.firestore {
         && request.resource.data.guardianIds == []
         && request.resource.data.organizationIds == []
         && request.resource.data.schoolIds == [];
+    }
+
+    function pendingSelfServiceUser() {
+      return signedIn()
+        && !hasActiveInvite()
+        && ownProfile().status == 'pending'
+        && ownProfile().role == 'pending'
+        && ownProfile().organizationIds == []
+        && ownProfile().schoolIds == [];
+    }
+
+    function validSelfServiceOrganization(data) {
+      return pendingSelfServiceUser()
+        && data.ownerUid == request.auth.uid
+        && data.createdBy == request.auth.uid
+        && data.selfService == true
+        && data.status == 'active'
+        && data.type in ['personal_workspace', 'independent_school', 'district'];
+    }
+
+    function validSelfServiceSchool(data) {
+      return pendingSelfServiceUser()
+        && data.ownerUid == request.auth.uid
+        && data.createdBy == request.auth.uid
+        && data.selfService == true
+        && data.status == 'active'
+        && organizationAfterData(data.organizationId).ownerUid == request.auth.uid
+        && organizationAfterData(data.organizationId).selfService == true;
+    }
+
+    function validSelfServiceUpgrade() {
+      return resource.data.status == 'pending'
+        && resource.data.role == 'pending'
+        && !hasActiveInvite()
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role in ['teacher', 'school_admin', 'district_admin']
+        && request.resource.data.status == 'active'
+        && request.resource.data.platformAccess == false
+        && request.resource.data.linkedStudentIds == []
+        && request.resource.data.guardianIds == []
+        && request.resource.data.organizationIds.size() == 1
+        && request.resource.data.schoolIds.size() == 1
+        && request.resource.data.selfService == true
+        && request.resource.data.setupComplete == true
+        && request.resource.data.setupRole == request.resource.data.role
+        && organizationAfterData(request.resource.data.organizationIds[0]).ownerUid == request.auth.uid
+        && organizationAfterData(request.resource.data.organizationIds[0]).selfService == true
+        && schoolAfterData(request.resource.data.schoolIds[0]).ownerUid == request.auth.uid
+        && schoolAfterData(request.resource.data.schoolIds[0]).selfService == true
+        && schoolAfterData(request.resource.data.schoolIds[0]).organizationId == request.resource.data.organizationIds[0]
+        && (
+          (request.resource.data.role == 'teacher'
+            && organizationAfterData(request.resource.data.organizationIds[0]).type == 'personal_workspace')
+          || (request.resource.data.role == 'school_admin'
+            && organizationAfterData(request.resource.data.organizationIds[0]).type == 'independent_school')
+          || (request.resource.data.role == 'district_admin'
+            && organizationAfterData(request.resource.data.organizationIds[0]).type == 'district')
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'role', 'status', 'platformAccess', 'organizationIds', 'schoolIds',
+          'selfService', 'setupComplete', 'setupRole', 'setupAt', 'lastLoginAt'
+        ]);
     }
 
     function safeSelfProfileUpdate() {
@@ -254,7 +328,7 @@ service cloud.firestore {
       allow update: if isOwner()
         || (signedIn()
           && request.auth.uid == uid
-          && (safeSelfProfileUpdate() || validInviteUpgrade()))
+          && (safeSelfProfileUpdate() || validInviteUpgrade() || validSelfServiceUpgrade()))
         || (hasRole(['district_admin', 'school_admin'])
           && sameSchool(resource.data)
           && request.resource.data.schoolIds == resource.data.schoolIds
@@ -282,12 +356,44 @@ service cloud.firestore {
 
     match /organizations/{organizationId} {
       allow read: if isOwner() || belongsToOrganization(organizationId);
-      allow create, update, delete: if isOwner();
+      allow create: if isOwner() || validSelfServiceOrganization(request.resource.data);
+      allow update: if isOwner()
+        || (hasRole(['district_admin'])
+          && belongsToOrganization(organizationId)
+          && resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.selfService == resource.data.selfService
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'code', 'status', 'updatedAt'
+          ]));
+      allow delete: if isOwner();
     }
 
     match /schools/{schoolId} {
-      allow read: if isOwner() || belongsToSchool(schoolId);
-      allow create, update, delete: if isOwner();
+      allow read: if isOwner()
+        || belongsToSchool(schoolId)
+        || (hasRole(['district_admin']) && belongsToOrganization(resource.data.organizationId));
+      allow create: if isOwner()
+        || validSelfServiceSchool(request.resource.data)
+        || (hasRole(['district_admin'])
+          && belongsToOrganization(request.resource.data.organizationId)
+          && request.resource.data.organizationId in ownProfile().organizationIds);
+      allow update: if isOwner()
+        || (hasRole(['district_admin'])
+          && belongsToOrganization(resource.data.organizationId)
+          && request.resource.data.organizationId == resource.data.organizationId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'code', 'timezone', 'status', 'updatedAt'
+          ]))
+        || (hasRole(['school_admin'])
+          && belongsToSchool(schoolId)
+          && request.resource.data.organizationId == resource.data.organizationId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'name', 'code', 'timezone', 'status', 'updatedAt'
+          ]));
+      allow delete: if isOwner();
     }
 
     match /terms/{termId} {
