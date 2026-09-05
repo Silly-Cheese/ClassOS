@@ -32,6 +32,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(userId)).data;
     }
 
+    function schoolData(schoolId) {
+      return get(/databases/$(database)/documents/schools/$(schoolId)).data;
+    }
+
     function isOwner() {
       return isBootstrapOwner();
     }
@@ -55,8 +59,12 @@ service cloud.firestore {
 
     function invitedProfileIsValid() {
       return hasActiveInvite()
+        && request.resource.data.email == authEmail()
         && request.resource.data.role == get(invitePath()).data.role
         && request.resource.data.status == 'active'
+        && request.resource.data.platformAccess == false
+        && request.resource.data.linkedStudentIds == []
+        && request.resource.data.guardianIds == []
         && request.resource.data.organizationIds == (
           get(invitePath()).data.organizationId != ''
             ? [get(invitePath()).data.organizationId]
@@ -70,8 +78,12 @@ service cloud.firestore {
     }
 
     function pendingProfileIsValid() {
-      return request.resource.data.role == 'pending'
+      return request.resource.data.email == authEmail()
+        && request.resource.data.role == 'pending'
         && request.resource.data.status == 'pending'
+        && request.resource.data.platformAccess == false
+        && request.resource.data.linkedStudentIds == []
+        && request.resource.data.guardianIds == []
         && request.resource.data.organizationIds == []
         && request.resource.data.schoolIds == [];
     }
@@ -85,6 +97,9 @@ service cloud.firestore {
       return resource.data.status == 'pending'
         && resource.data.role == 'pending'
         && invitedProfileIsValid()
+        && request.resource.data.platformAccess == false
+        && request.resource.data.linkedStudentIds == []
+        && request.resource.data.guardianIds == []
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'displayName', 'photoURL', 'lastLoginAt',
           'role', 'status', 'organizationIds', 'schoolIds', 'invitationEmail'
@@ -226,8 +241,10 @@ service cloud.firestore {
 
       allow create: if signedIn() && request.auth.uid == uid && (
         (isBootstrapOwner()
+          && request.resource.data.email == authEmail()
           && request.resource.data.role == 'platform_owner'
-          && request.resource.data.status == 'active')
+          && request.resource.data.status == 'active'
+          && request.resource.data.platformAccess == true)
         || (!isBootstrapOwner() && invitedProfileIsValid())
         || (!isBootstrapOwner() && !hasActiveInvite() && pendingProfileIsValid())
       );
@@ -275,7 +292,8 @@ service cloud.firestore {
       allow read: if isOwner() || belongsToSchool(resource.data.schoolId);
       allow create: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
-          && belongsToSchool(request.resource.data.schoolId));
+          && belongsToSchool(request.resource.data.schoolId)
+          && request.resource.data.organizationId == schoolData(request.resource.data.schoolId).organizationId);
       allow update: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
           && belongsToSchool(resource.data.schoolId)
@@ -294,7 +312,8 @@ service cloud.firestore {
 
       allow create: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
-          && belongsToSchool(request.resource.data.schoolId));
+          && belongsToSchool(request.resource.data.schoolId)
+          && request.resource.data.organizationId == schoolData(request.resource.data.schoolId).organizationId);
 
       allow update: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
@@ -314,7 +333,8 @@ service cloud.firestore {
     match /assignments/{assignmentId} {
       allow read: if canReadCourseContent(resource.data.courseId);
       allow create: if canManageCourse(request.resource.data.courseId)
-        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId;
+        && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId
+        && request.resource.data.organizationId == courseData(request.resource.data.courseId).organizationId;
       allow update: if canManageCourse(resource.data.courseId)
         && request.resource.data.courseId == resource.data.courseId
         && request.resource.data.schoolId == resource.data.schoolId
@@ -474,6 +494,7 @@ service cloud.firestore {
         && assessmentData(request.resource.data.assessmentId).courseId == request.resource.data.courseId
         && assessmentData(request.resource.data.assessmentId).status == 'published'
         && request.resource.data.schoolId == courseData(request.resource.data.courseId).schoolId
+        && request.resource.data.pointsPossible == assessmentData(request.resource.data.assessmentId).pointsPossible
         && request.resource.data.score == null
         && request.resource.data.itemResults == []
         && request.resource.data.feedback == ''
@@ -520,6 +541,7 @@ service cloud.firestore {
 
     match /auditLogs/{logId} {
       allow create: if signedIn()
+        && ownProfile().status == 'active'
         && request.resource.data.actorUid == request.auth.uid
         && request.resource.data.actorEmail == authEmail()
         && request.resource.data.createdAt == request.time;
