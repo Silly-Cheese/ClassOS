@@ -38,6 +38,7 @@ jobs:
           node --check service-worker.js
           node --check tests/firestore.rules.test.mjs
           node --check tests/no-verification.rules.test.mjs
+          node --check tests/gradebook.rules.test.mjs
 
       - name: Install Firestore rules test dependencies
         run: npm install --no-save --no-package-lock @firebase/rules-unit-testing firebase
@@ -46,3 +47,4 @@ jobs:
         run: |
           npx --yes firebase-tools@14 emulators:exec --project demo-classos --only firestore "node tests/firestore.rules.test.mjs"
           npx --yes firebase-tools@14 emulators:exec --project demo-classos-no-verification --only firestore "node tests/no-verification.rules.test.mjs"
+          npx --yes firebase-tools@14 emulators:exec --project demo-classos-gradebook --only firestore "node tests/gradebook.rules.test.mjs"
