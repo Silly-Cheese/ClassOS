@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="./assets/production.css" />
   <link rel="stylesheet" href="./assets/gradebook.css" />
   <link rel="stylesheet" href="./assets/manage.css" />
+  <link rel="stylesheet" href="./assets/onboarding.css" />
 </head>
 <body>
   <a class="skip-link" href="#page-content">Skip to main content</a>
@@ -33,8 +34,8 @@
       </div>
       <div class="auth-proof">
         <div><strong>Students</strong><span>See what’s due and what’s missing</span></div>
-        <div><strong>Teachers</strong><span>Manage classes and grades</span></div>
-        <div><strong>Families</strong><span>Keep up with progress</span></div>
+        <div><strong>Educators</strong><span>Create classes and manage grades</span></div>
+        <div><strong>Schools</strong><span>Set up a workspace and get started</span></div>
       </div>
     </section>
 
@@ -89,10 +90,6 @@
       </div>
       <nav id="primary-nav" class="primary-nav" aria-label="Primary navigation">
         <button class="nav-item active" data-route="dashboard"><span>⌂</span>Home</button>
-        <button class="nav-item" data-route="courses"><span>▤</span>Courses</button>
-        <button class="nav-item" data-route="people"><span>◎</span>People</button>
-        <button class="nav-item owner-only" data-route="organizations"><span>◇</span>Organizations</button>
-        <button class="nav-item owner-only" data-route="platform"><span>⚙</span>Platform</button>
       </nav>
       <div class="sidebar-bottom">
         <button class="nav-item" data-route="settings"><span>⚙</span>Settings</button>
@@ -139,14 +136,17 @@
   </script>
   <script type="module" src="./src/main.js"></script>
   <script type="module" src="./src/auth-compat.js"></script>
+  <script type="module" src="./src/onboarding.js"></script>
   <script type="module" src="./src/terms.js"></script>
   <script type="module" src="./src/course-tools.js"></script>
   <script type="module" src="./src/gradebook-v5.js"></script>
   <script type="module" src="./src/manage.js"></script>
+  <script type="module" src="./src/workspace.js"></script>
   <script type="module" src="./src/ui-fixes.js"></script>
   <script type="module" src="./src/intelligence.js"></script>
   <script type="module" src="./src/production.js"></script>
   <script type="module" src="./src/hardening.js"></script>
   <script type="module" src="./src/student-assessments.js"></script>
+  <script type="module" src="./src/navigation.js"></script>
 </body>
 </html>
