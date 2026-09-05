@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classos-1.0-v1';
+const CACHE_NAME = 'classos-1.0-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -13,7 +13,8 @@ const APP_SHELL = [
   './src/lms.js',
   './src/intelligence.js',
   './src/production.js',
-  './src/hardening.js'
+  './src/hardening.js',
+  './src/student-assessments.js'
 ];
 
 self.addEventListener('install', (event) => {
