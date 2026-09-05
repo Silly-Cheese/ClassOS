@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classos-1.0-v16';
+const CACHE_NAME = 'classos-1.0-v17';
 const APP_SHELL = [
   './',
   './index.html',
@@ -19,6 +19,7 @@ const APP_SHELL = [
   './src/workspace.js',
   './src/terms.js',
   './src/course-tools.js',
+  './src/student-enrollment.js',
   './src/gradebook-v5.js',
   './src/manage.js',
   './src/ui-fixes.js',
