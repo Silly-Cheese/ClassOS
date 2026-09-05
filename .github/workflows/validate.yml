@@ -24,8 +24,10 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check src/main.js
+          node --check src/auth-compat.js
           node --check src/terms.js
           node --check src/course-tools.js
+          node --check src/gradebook.js
           node --check src/ui-fixes.js
           node --check src/lms.js
           node --check src/intelligence.js
@@ -35,6 +37,7 @@ jobs:
           node --check src/firebase.js
           node --check service-worker.js
           node --check tests/firestore.rules.test.mjs
+          node --check tests/no-verification.rules.test.mjs
 
       - name: Install Firestore rules test dependencies
         run: npm install --no-save --no-package-lock @firebase/rules-unit-testing firebase
@@ -42,3 +45,4 @@ jobs:
       - name: Validate Firestore rules and authorization regression tests
         run: |
           npx --yes firebase-tools@14 emulators:exec --project demo-classos --only firestore "node tests/firestore.rules.test.mjs"
+          npx --yes firebase-tools@14 emulators:exec --project demo-classos-no-verification --only firestore "node tests/no-verification.rules.test.mjs"
