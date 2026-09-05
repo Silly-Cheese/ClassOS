@@ -116,9 +116,7 @@ service cloud.firestore {
 
     match /invitations/{email} {
       allow get: if isOwner()
-        || (emailVerified()
-          && email == authEmail()
-          && resource.data.email == authEmail());
+        || (emailVerified() && email == authEmail());
       allow list: if isOwner();
 
       allow create, update: if isOwner()
