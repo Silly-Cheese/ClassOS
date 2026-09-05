@@ -25,6 +25,9 @@ jobs:
         run: |
           node --check src/main.js
           node --check src/auth-compat.js
+          node --check src/onboarding.js
+          node --check src/navigation.js
+          node --check src/workspace.js
           node --check src/terms.js
           node --check src/course-tools.js
           node --check src/gradebook-v5.js
@@ -40,6 +43,7 @@ jobs:
           node --check tests/firestore.rules.test.mjs
           node --check tests/no-verification.rules.test.mjs
           node --check tests/gradebook.rules.test.mjs
+          node --check tests/self-service.rules.test.mjs
 
       - name: Install Firestore rules test dependencies
         run: npm install --no-save --no-package-lock @firebase/rules-unit-testing firebase
@@ -49,3 +53,4 @@ jobs:
           npx --yes firebase-tools@14 emulators:exec --project demo-classos --only firestore "node tests/firestore.rules.test.mjs"
           npx --yes firebase-tools@14 emulators:exec --project demo-classos-no-verification --only firestore "node tests/no-verification.rules.test.mjs"
           npx --yes firebase-tools@14 emulators:exec --project demo-classos-gradebook --only firestore "node tests/gradebook.rules.test.mjs"
+          npx --yes firebase-tools@14 emulators:exec --project demo-classos-self-service --only firestore "node tests/self-service.rules.test.mjs"
