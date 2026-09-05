@@ -27,7 +27,7 @@ jobs:
           node --check src/auth-compat.js
           node --check src/terms.js
           node --check src/course-tools.js
-          node --check src/gradebook-v3.js
+          node --check src/gradebook-v4.js
           node --check src/manage.js
           node --check src/ui-fixes.js
           node --check src/lms.js
