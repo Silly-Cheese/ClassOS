@@ -19,9 +19,11 @@
 .gb-type.assessment { background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); }
 .gb-readonly { min-width: 118px; text-align: center; }
 .gb-readonly strong { font-size: .8rem; }
+.gb-no-attempt { width: 86px; margin: 0 auto; border: 1px dashed var(--line); border-radius: 9px; background: var(--surface-2); color: var(--muted); padding: 8px 6px; font-size: .68rem; font-weight: 720; text-align: center; }
 html.theme-dark .manage-hero { background: var(--surface); border-color: var(--line); }
 html.theme-dark .manage-row { border-color: var(--line); }
 html.theme-dark .gb-type.assignment { background: #182235; color: #cbd5e1; border-color: #475569; }
 html.theme-dark .gb-type.assessment { background: #132a46; color: #bfdbfe; border-color: #2d5f91; }
+html.theme-dark .gb-no-attempt { background: #111827; color: #94a3b8; border-color: #475569; }
 @media (max-width: 900px) { .manage-grid { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .manage-hero { align-items: stretch; } .manage-hero input { width: 100%; } .manage-row { grid-template-columns: 1fr; } .manage-row .btn { width: 100%; } }
