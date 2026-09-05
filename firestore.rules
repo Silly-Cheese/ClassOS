@@ -11,12 +11,14 @@ service cloud.firestore {
         : '';
     }
 
+    // ClassOS does not require Firebase email verification. Keep this helper
+    // as a compatibility alias for older rule logic.
     function emailVerified() {
-      return signedIn() && request.auth.token.email_verified == true;
+      return signedIn();
     }
 
     function isBootstrapOwner() {
-      return emailVerified()
+      return signedIn()
         && authEmail() == 'christophershelley257@gmail.com';
     }
 
@@ -51,7 +53,7 @@ service cloud.firestore {
     }
 
     function hasActiveInvite() {
-      return emailVerified()
+      return signedIn()
         && exists(invitePath())
         && get(invitePath()).data.status == 'active'
         && get(invitePath()).data.email == authEmail();
@@ -267,7 +269,7 @@ service cloud.firestore {
 
     match /invitations/{email} {
       allow get: if isOwner()
-        || (emailVerified() && email == authEmail());
+        || (signedIn() && email == authEmail());
       allow list: if isOwner();
       allow create, update: if isOwner()
         && request.resource.data.email == email
