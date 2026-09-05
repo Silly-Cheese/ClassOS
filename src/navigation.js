@@ -55,7 +55,9 @@ function desiredMarkup() {
       core.push(standard('gradebook', '▦', 'Gradebook'), standard('assignments', '✓', 'Assignments'));
       tools.push(p3('assessments', '◫', 'Assessments'));
     }
-    tools.push(standard('calendar', '□', 'Calendar'), standard('attendance', '◉', 'Attendance'), standard('inbox', '✉', 'Inbox'));
+    tools.push(standard('calendar', '□', 'Calendar'));
+    if (r !== 'staff') tools.push(standard('attendance', '◉', 'Attendance'));
+    tools.push(standard('inbox', '✉', 'Inbox'));
     if (educator() || admin()) tools.push(p3('command', '◈', 'Insights'));
     if (r === 'counselor' || educator() || admin()) tools.push(p3('support', '+', 'Student Support'));
     if (r === 'district_admin' || isOwner()) tools.push(p3('district', '▥', 'District Overview'));
@@ -101,14 +103,13 @@ function rebuild() {
   if (!nav) return;
   const html = desiredMarkup();
   const signature = `${profile?.role || 'none'}|${profile?.status || 'none'}|${isOwner() ? 'owner' : 'user'}`;
-  if (nav.dataset.navSignature === signature && nav.innerHTML === html) {
-    updateActive();
-    return;
+  if (nav.dataset.navSignature !== signature || nav.innerHTML !== html) {
+    rebuilding = true;
+    nav.innerHTML = html;
+    nav.dataset.navSignature = signature;
+    rebuilding = false;
   }
-  rebuilding = true;
-  nav.innerHTML = html;
-  nav.dataset.navSignature = signature;
-  rebuilding = false;
+  if ($('mini-role') && educator()) $('mini-role').textContent = 'Educator';
   updateActive();
 }
 
