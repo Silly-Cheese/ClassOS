@@ -1,14 +1,16 @@
-const CACHE_NAME = 'classos-phase2-v1';
+const CACHE_NAME = 'classos-phase3-v1';
 const APP_SHELL = [
   './',
   './index.html',
   './assets/styles.css',
   './assets/lms.css',
+  './assets/intelligence.css',
   './assets/icon.svg',
   './manifest.webmanifest',
   './src/firebase.js',
   './src/main.js',
-  './src/lms.js'
+  './src/lms.js',
+  './src/intelligence.js'
 ];
 
 self.addEventListener('install', (event) => {
