@@ -1,7 +1,7 @@
 import { auth, db, OWNER_EMAIL } from './firebase.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
-  addDoc, collection, doc, getDoc, getDocs, serverTimestamp
+  addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,12 +12,14 @@ const emailKey = (value = '') => String(value).trim().toLowerCase();
 
 let profile = null;
 let schools = [];
+let teacherCourses = [];
 let injectQueued = false;
 
 const role = () => profile?.role || '';
 const uid = () => auth.currentUser?.uid || '';
-const isOwner = () => !!auth.currentUser?.emailVerified && emailKey(auth.currentUser?.email) === OWNER_EMAIL;
+const isOwner = () => emailKey(auth.currentUser?.email) === OWNER_EMAIL;
 const canCreateCourse = () => isOwner() || ['district_admin', 'school_admin', 'teacher'].includes(role());
+const canAddStudent = () => role() === 'teacher';
 
 function toast(message, type = '') {
   const region = $('toast-region');
@@ -26,7 +28,7 @@ function toast(message, type = '') {
   node.className = `toast ${type}`.trim();
   node.textContent = message;
   region.appendChild(node);
-  window.setTimeout(() => node.remove(), 4200);
+  window.setTimeout(() => node.remove(), 4600);
 }
 
 async function loadProfile() {
@@ -53,6 +55,14 @@ async function loadSchools() {
   return results.filter(Boolean);
 }
 
+async function loadTeacherCourses() {
+  if (!auth.currentUser || role() !== 'teacher') return [];
+  const snapshot = await getDocs(query(collection(db, 'courses'), where('teacherIds', 'array-contains', uid())));
+  return snapshot.docs
+    .map((item) => ({ id: item.id, ...item.data() }))
+    .filter((course) => course.status !== 'archived' && (profile?.schoolIds || []).includes(course.schoolId));
+}
+
 function ensureModal() {
   let modal = $('course-create-modal');
   if (modal) return modal;
@@ -60,7 +70,7 @@ function ensureModal() {
     <div id="course-create-modal" class="modal-backdrop hidden" role="presentation">
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="course-create-title">
         <div class="modal-head">
-          <div><span class="eyebrow">ACADEMICS</span><h3 id="course-create-title">Create course</h3></div>
+          <div><span class="eyebrow" id="course-tools-kicker">ACADEMICS</span><h3 id="course-create-title">Create course</h3></div>
           <button id="course-create-close" class="icon-btn" type="button" aria-label="Close">×</button>
         </div>
         <div id="course-create-body" class="modal-body"></div>
@@ -70,6 +80,11 @@ function ensureModal() {
   $('course-create-close').onclick = closeModal;
   modal.onclick = (event) => { if (event.target === modal) closeModal(); };
   return modal;
+}
+
+function setModalHeading(title, kicker = 'ACADEMICS') {
+  if ($('course-create-title')) $('course-create-title').textContent = title;
+  if ($('course-tools-kicker')) $('course-tools-kicker').textContent = kicker;
 }
 
 function closeModal() {
@@ -86,6 +101,7 @@ async function showCreateCourse() {
   }
 
   const modal = ensureModal();
+  setModalHeading('Create course');
   $('course-create-body').innerHTML = `
     <form id="course-create-form" onsubmit="return false;">
       <div class="form-grid">
@@ -117,19 +133,60 @@ async function showCreateCourse() {
   window.setTimeout(() => $('course-create-body')?.querySelector('input[name="name"]')?.focus(), 0);
 }
 
-async function logCourseCreate(courseId, name) {
+async function showAddStudent() {
+  if (!canAddStudent()) return;
+  teacherCourses = await loadTeacherCourses();
+  if (!teacherCourses.length) {
+    toast('Create a course before adding students.', 'error');
+    return;
+  }
+
+  const modal = ensureModal();
+  setModalHeading('Add student', 'ROSTER');
+  $('course-create-body').innerHTML = `
+    <form id="student-create-form" onsubmit="return false;">
+      <div class="callout info" style="margin-bottom:18px">
+        <strong>Student account setup</strong>
+        <span>The student will use this email to create or sign into ClassOS. Their student role, school, and class enrollment will be applied automatically.</span>
+      </div>
+      <div class="form-grid">
+        <div class="field span-2">
+          <label>Student name</label>
+          <input name="studentName" maxlength="100" required placeholder="Student name">
+        </div>
+        <div class="field span-2">
+          <label>Student email</label>
+          <input name="email" type="email" maxlength="254" required placeholder="student@example.com">
+        </div>
+        <div class="field span-2">
+          <label>Class</label>
+          <select name="courseId" required>
+            ${teacherCourses.map((course) => `<option value="${esc(course.id)}">${esc(course.name || 'Course')}${course.courseCode ? ` · ${esc(course.courseCode)}` : ''}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-course-tools-action="cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" data-course-tools-action="save-student">Add student</button>
+      </div>
+    </form>`;
+  modal.classList.remove('hidden');
+  window.setTimeout(() => $('course-create-body')?.querySelector('input[name="studentName"]')?.focus(), 0);
+}
+
+async function logAction(action, targetType, targetId, details = {}) {
   try {
     await addDoc(collection(db, 'auditLogs'), {
       actorUid: uid(),
       actorEmail: emailKey(auth.currentUser?.email),
-      action: 'course.create',
-      targetType: 'course',
-      targetId: courseId,
-      details: { name },
+      action,
+      targetType,
+      targetId,
+      details,
       createdAt: serverTimestamp()
     });
   } catch (error) {
-    console.warn('Course audit log could not be written', error);
+    console.warn('ClassOS audit log could not be written', error);
   }
 }
 
@@ -162,7 +219,7 @@ async function saveCourse(form, button) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     });
-    await logCourseCreate(ref.id, String(data.name || '').trim());
+    await logAction('course.create', 'course', ref.id, { name: String(data.name || '').trim() });
     closeModal();
     toast('Course created.', 'success');
     document.querySelector('.nav-item[data-route="courses"]')?.click();
@@ -180,17 +237,84 @@ async function saveCourse(form, button) {
   }
 }
 
-function injectButton() {
-  if (!canCreateCourse() || $('page-title')?.textContent !== 'Courses') return;
-  if (document.querySelector('[data-course-tools-action="new"]')) return;
+async function saveStudent(form, button) {
+  if (!form || !canAddStudent()) return;
+  if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
+  const data = Object.fromEntries(new FormData(form));
+  const course = teacherCourses.find((item) => item.id === data.courseId);
+  if (!course || !(course.teacherIds || []).includes(uid())) {
+    toast('Choose one of your own classes.', 'error');
+    return;
+  }
+  const mail = emailKey(data.email);
+  if (!mail || mail === OWNER_EMAIL) {
+    toast('Enter a valid student email address.', 'error');
+    return;
+  }
+
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Adding…';
+  try {
+    await setDoc(doc(db, 'invitations', mail), {
+      email: mail,
+      role: 'student',
+      schoolId: course.schoolId || '',
+      organizationId: course.organizationId || '',
+      courseId: course.id,
+      studentName: String(data.studentName || '').trim(),
+      status: 'active',
+      invitedBy: uid(),
+      invitedByRole: 'teacher',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    await logAction('student.create', 'invitation', mail, { courseId: course.id, schoolId: course.schoolId, studentName: String(data.studentName || '').trim() });
+    closeModal();
+    toast('Student added. Their ClassOS access will be ready when they sign in with that email.', 'success');
+  } catch (error) {
+    console.error(error);
+    const message = error?.code === 'permission-denied'
+      ? 'Teacher student creation needs the latest ClassOS Firestore rules to be deployed.'
+      : error?.message || 'Could not add the student.';
+    toast(message, 'error');
+  } finally {
+    if (document.body.contains(button)) {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+}
+
+function injectButtons() {
+  if ($('page-title')?.textContent !== 'Courses') return;
   const toolbar = document.querySelector('#page-content .toolbar');
   if (!toolbar) return;
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn-primary';
-  button.dataset.courseToolsAction = 'new';
-  button.textContent = 'Create Course';
-  toolbar.appendChild(button);
+
+  let actions = toolbar.querySelector('.course-tools-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'toolbar-group course-tools-actions';
+    toolbar.appendChild(actions);
+  }
+
+  if (canAddStudent() && !actions.querySelector('[data-course-tools-action="new-student"]')) {
+    const studentButton = document.createElement('button');
+    studentButton.type = 'button';
+    studentButton.className = 'btn btn-secondary';
+    studentButton.dataset.courseToolsAction = 'new-student';
+    studentButton.textContent = 'Add Student';
+    actions.appendChild(studentButton);
+  }
+
+  if (canCreateCourse() && !actions.querySelector('[data-course-tools-action="new"]')) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-primary';
+    button.dataset.courseToolsAction = 'new';
+    button.textContent = 'Create Course';
+    actions.appendChild(button);
+  }
 }
 
 function scheduleInject() {
@@ -198,12 +322,12 @@ function scheduleInject() {
   injectQueued = true;
   window.setTimeout(() => {
     injectQueued = false;
-    injectButton();
+    injectButtons();
   }, 80);
 }
 
 document.addEventListener('submit', (event) => {
-  if (event.target?.id === 'course-create-form') event.preventDefault();
+  if (['course-create-form', 'student-create-form'].includes(event.target?.id)) event.preventDefault();
 }, true);
 
 document.addEventListener('click', async (event) => {
@@ -212,8 +336,10 @@ document.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
     if (action.dataset.courseToolsAction === 'new') await showCreateCourse();
+    if (action.dataset.courseToolsAction === 'new-student') await showAddStudent();
     if (action.dataset.courseToolsAction === 'cancel') closeModal();
     if (action.dataset.courseToolsAction === 'save') await saveCourse(action.closest('form'), action);
+    if (action.dataset.courseToolsAction === 'save-student') await saveStudent(action.closest('form'), action);
     return;
   }
 
@@ -234,6 +360,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) {
     profile = null;
     schools = [];
+    teacherCourses = [];
     return;
   }
   try {
