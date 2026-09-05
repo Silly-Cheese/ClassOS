@@ -11,9 +11,12 @@ service cloud.firestore {
         : '';
     }
 
+    function emailVerified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
     function isBootstrapOwner() {
-      return signedIn()
-        && request.auth.token.email_verified == true
+      return emailVerified()
         && authEmail() == 'christophershelley257@gmail.com';
     }
 
@@ -26,7 +29,9 @@ service cloud.firestore {
     }
 
     function hasRole(roles) {
-      return signedIn() && ownProfile().status == 'active' && ownProfile().role in roles;
+      return signedIn()
+        && ownProfile().status == 'active'
+        && ownProfile().role in roles;
     }
 
     function invitePath() {
@@ -34,7 +39,7 @@ service cloud.firestore {
     }
 
     function hasActiveInvite() {
-      return signedIn()
+      return emailVerified()
         && exists(invitePath())
         && get(invitePath()).data.status == 'active'
         && get(invitePath()).data.email == authEmail();
@@ -63,6 +68,21 @@ service cloud.firestore {
         && request.resource.data.schoolIds == [];
     }
 
+    function isSafeSelfProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['displayName', 'photoURL', 'lastLoginAt']);
+    }
+
+    function isValidInviteUpgrade() {
+      return resource.data.status == 'pending'
+        && resource.data.role == 'pending'
+        && invitedProfileIsValid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'lastLoginAt',
+          'role', 'status', 'organizationIds', 'schoolIds', 'invitationEmail'
+        ]);
+    }
+
     function belongsToSchool(schoolId) {
       return signedIn()
         && ownProfile().status == 'active'
@@ -89,21 +109,25 @@ service cloud.firestore {
       allow update: if isOwner()
         || (signedIn()
           && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName', 'photoURL', 'lastLoginAt']));
+          && (isSafeSelfProfileUpdate() || isValidInviteUpgrade()));
 
       allow delete: if isOwner() && uid != request.auth.uid;
     }
 
     match /invitations/{email} {
-      allow get: if isOwner() || (signedIn() && email == authEmail() && resource.data.email == authEmail());
+      allow get: if isOwner()
+        || (emailVerified()
+          && email == authEmail()
+          && resource.data.email == authEmail());
       allow list: if isOwner();
-      allow create, update, delete: if isOwner()
+
+      allow create, update: if isOwner()
         && request.resource.data.email == email
         && request.resource.data.role in [
           'student', 'teacher', 'guardian', 'staff', 'counselor',
           'school_admin', 'district_admin'
         ];
+      allow delete: if isOwner();
     }
 
     match /organizations/{organizationId} {
