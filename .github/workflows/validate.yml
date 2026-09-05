@@ -28,6 +28,7 @@ jobs:
           node --check src/intelligence.js
           node --check src/production.js
           node --check src/hardening.js
+          node --check src/student-assessments.js
           node --check src/firebase.js
           node --check service-worker.js
 
