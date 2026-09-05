@@ -18,6 +18,7 @@ let assignments = [];
 let submissions = [];
 let students = [];
 let renderTimer = null;
+let rendering = false;
 
 const uid = () => auth.currentUser?.uid || '';
 const role = () => profile?.role || '';
@@ -196,9 +197,10 @@ function renderPage() {
 }
 
 async function renderGradebook(requestedCourseId = selectedCourseId) {
-  if (!canEditGrades() || $('page-title')?.textContent !== 'Gradebook') return;
+  if (rendering || !canEditGrades() || $('page-title')?.textContent !== 'Gradebook') return;
   const content = $('page-content');
   if (!content) return;
+  rendering = true;
   content.innerHTML = '<div class="skeleton" style="height:180px"></div>';
   try {
     courses = await loadCourses();
@@ -213,6 +215,8 @@ async function renderGradebook(requestedCourseId = selectedCourseId) {
   } catch (error) {
     console.error(error);
     content.innerHTML = `<div class="empty-state"><strong>Gradebook could not load.</strong>${esc(error?.message || 'Check course access and Firestore rules.')}</div>`;
+  } finally {
+    rendering = false;
   }
 }
 
@@ -314,7 +318,7 @@ function updateDirtyState(input) {
 function scheduleRender() {
   window.clearTimeout(renderTimer);
   renderTimer = window.setTimeout(() => {
-    if ($('page-title')?.textContent !== 'Gradebook' || !canEditGrades()) return;
+    if (rendering || $('page-title')?.textContent !== 'Gradebook' || !canEditGrades()) return;
     if (document.querySelector('#page-content .gradebook-plus')) return;
     renderGradebook().catch(console.error);
   }, 90);
