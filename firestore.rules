@@ -313,7 +313,14 @@ service cloud.firestore {
       allow create: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
           && belongsToSchool(request.resource.data.schoolId)
-          && request.resource.data.organizationId == schoolData(request.resource.data.schoolId).organizationId);
+          && request.resource.data.organizationId == schoolData(request.resource.data.schoolId).organizationId)
+        || (hasRole(['teacher'])
+          && belongsToSchool(request.resource.data.schoolId)
+          && request.resource.data.organizationId == schoolData(request.resource.data.schoolId).organizationId
+          && request.resource.data.teacherIds == [request.auth.uid]
+          && request.resource.data.studentIds == []
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.status == 'active');
 
       allow update: if isOwner()
         || (hasRole(['district_admin', 'school_admin'])
