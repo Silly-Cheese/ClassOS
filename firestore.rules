@@ -1,0 +1,159 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function authEmail() {
+      return signedIn() && request.auth.token.email != null
+        ? request.auth.token.email
+        : '';
+    }
+
+    function isBootstrapOwner() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && authEmail() == 'christophershelley257@gmail.com';
+    }
+
+    function ownProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwner() {
+      return isBootstrapOwner();
+    }
+
+    function hasRole(roles) {
+      return signedIn() && ownProfile().status == 'active' && ownProfile().role in roles;
+    }
+
+    function invitePath() {
+      return /databases/$(database)/documents/invitations/$(authEmail());
+    }
+
+    function hasActiveInvite() {
+      return signedIn()
+        && exists(invitePath())
+        && get(invitePath()).data.status == 'active'
+        && get(invitePath()).data.email == authEmail();
+    }
+
+    function invitedProfileIsValid() {
+      return hasActiveInvite()
+        && request.resource.data.role == get(invitePath()).data.role
+        && request.resource.data.status == 'active'
+        && request.resource.data.organizationIds == (
+          get(invitePath()).data.organizationId != ''
+            ? [get(invitePath()).data.organizationId]
+            : []
+        )
+        && request.resource.data.schoolIds == (
+          get(invitePath()).data.schoolId != ''
+            ? [get(invitePath()).data.schoolId]
+            : []
+        );
+    }
+
+    function pendingProfileIsValid() {
+      return request.resource.data.role == 'pending'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.organizationIds == []
+        && request.resource.data.schoolIds == [];
+    }
+
+    function belongsToSchool(schoolId) {
+      return signedIn()
+        && ownProfile().status == 'active'
+        && schoolId in ownProfile().schoolIds;
+    }
+
+    function belongsToOrganization(organizationId) {
+      return signedIn()
+        && ownProfile().status == 'active'
+        && organizationId in ownProfile().organizationIds;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner() || (signedIn() && request.auth.uid == uid);
+
+      allow create: if signedIn() && request.auth.uid == uid && (
+        (isBootstrapOwner()
+          && request.resource.data.role == 'platform_owner'
+          && request.resource.data.status == 'active')
+        || (!isBootstrapOwner() && invitedProfileIsValid())
+        || (!isBootstrapOwner() && !hasActiveInvite() && pendingProfileIsValid())
+      );
+
+      allow update: if isOwner()
+        || (signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName', 'photoURL', 'lastLoginAt']));
+
+      allow delete: if isOwner() && uid != request.auth.uid;
+    }
+
+    match /invitations/{email} {
+      allow get: if isOwner() || (signedIn() && email == authEmail() && resource.data.email == authEmail());
+      allow list: if isOwner();
+      allow create, update, delete: if isOwner()
+        && request.resource.data.email == email
+        && request.resource.data.role in [
+          'student', 'teacher', 'guardian', 'staff', 'counselor',
+          'school_admin', 'district_admin'
+        ];
+    }
+
+    match /organizations/{organizationId} {
+      allow read: if isOwner() || belongsToOrganization(organizationId);
+      allow create, update, delete: if isOwner();
+    }
+
+    match /schools/{schoolId} {
+      allow read: if isOwner() || belongsToSchool(schoolId);
+      allow create, update, delete: if isOwner();
+    }
+
+    match /courses/{courseId} {
+      allow read: if isOwner()
+        || belongsToSchool(resource.data.schoolId)
+        || (signedIn() && request.auth.uid in resource.data.teacherIds)
+        || (signedIn() && request.auth.uid in resource.data.studentIds);
+
+      allow create: if isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(request.resource.data.schoolId));
+
+      allow update: if isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(resource.data.schoolId))
+        || (hasRole(['teacher']) && request.auth.uid in resource.data.teacherIds);
+
+      allow delete: if isOwner()
+        || (hasRole(['district_admin', 'school_admin'])
+          && belongsToSchool(resource.data.schoolId));
+    }
+
+    match /featureFlags/{flagId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isOwner();
+    }
+
+    match /system/{documentId} {
+      allow read, write: if isOwner();
+    }
+
+    match /auditLogs/{logId} {
+      allow create: if signedIn()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.actorEmail == authEmail();
+      allow read, update, delete: if isOwner();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
