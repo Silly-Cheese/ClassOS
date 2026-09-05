@@ -2,43 +2,43 @@
 
 **School shouldn’t be this complicated.**
 
-ClassOS is a web-first school operating system built as a static GitHub Pages application backed by Firebase Authentication and Cloud Firestore. Phase 1 established identity, permissions, organizations, schools, and courses. Phase 2 adds the usable LMS layer.
+ClassOS is a web-first school operating system built as a static GitHub Pages application backed by Firebase Authentication and Cloud Firestore. Phase 1 established identity and school structure. Phase 2 added the usable LMS. Phase 3 adds the assessment, mastery, support, and intelligence layer.
 
-## Phase 2 status
+## Phase 3 status
 
-Phase 2 includes:
+Phase 3 includes everything from Phases 1 and 2, plus:
 
-- Google sign-in
-- Email/password signup and login
-- Verified-email role activation
-- Automatic Platform Owner bootstrap for `christophershelley257@gmail.com`
-- Organizations, schools, users, roles, and course shells
-- Course roster management for teachers and students
-- Assignments with categories, due dates, points, instructions, draft/published status, and submission type
-- Student text/link submissions without Firebase Storage
-- Late and missing-work handling
-- Teacher grading queue
-- Scores and written feedback
-- Weighted grade categories
-- Student gradebook
-- Student grade sandbox for hypothetical scores
-- Teacher/admin gradebook views
-- Attendance with present, absent, tardy, and excused statuses
-- Student attendance history
-- Absent Mode recovery view
-- Course announcements
-- Unified assignment calendar / planner
-- Contextual ClassOS inbox and direct messaging
-- Parent/guardian Family View
-- Guardian-to-student account linking
-- Role-aware dashboards and navigation
-- Platform feature flags
-- Audit-log foundation
-- Responsive desktop/mobile interface
-- PWA manifest and service worker
-- Firestore Security Rules for all Phase 2 collections
-- GitHub Pages-compatible architecture
-- GitHub Actions JavaScript syntax validation
+- Secure course question banks
+- Multiple-choice, true/false, and short-answer questions
+- Draft/published assessments
+- Student assessment attempts
+- Protected assessment answer keys that student accounts cannot read
+- Objective-item auto-scoring for authorized teacher/admin review
+- Human scoring for short-answer items
+- Standards creation and assignment mapping
+- Learning Graph / standards mastery
+- Assessment evidence connected to standards
+- Explainable Student Pulse
+- Grade, completion, attendance, and mastery factor breakdowns
+- Workload collision detection for major items due in the next 7 days
+- Teacher Command Center
+- Student Support / intervention records
+- Counselor and administrator support workflows
+- Internal intervention notes hidden from student/guardian accounts
+- School and District Pulse dashboards
+- School-level comparisons
+- Academic signal guardrails that require human review
+- Role-aware Phase 3 navigation
+- Phase 3 PWA caching
+
+The Student Pulse is intentionally explainable. Its base weighting is:
+
+- Grade: 35%
+- Completion: 30%
+- Attendance: 20%
+- Mastery: 15%
+
+Only factors that have actual data are included, and the remaining factors are reweighted. Workload warnings do **not** lower the academic Pulse score. Pulse is designed to focus educator attention; it is not an automated disciplinary, placement, admissions, or eligibility decision.
 
 ## Firebase project
 
@@ -68,25 +68,25 @@ Firebase's default project domains should remain present.
 
 Create the Firestore database in Firebase Console.
 
-ClassOS Phase 2 still does **not** require Firebase Storage or Cloud Functions. Student submissions currently use typed responses and/or external links so the system remains compatible with the no-paid-backend architecture.
+ClassOS Phase 3 still does **not** require Firebase Storage or Cloud Functions. Student file work can continue through external links, and secure assessment keys remain in Firestore collections that only authorized educators can read.
 
 ### 4. Deploy Firestore rules
 
 The production rules live in `firestore.rules`.
 
-With Firebase CLI installed and authenticated:
+With the Firebase CLI installed and authenticated:
 
 ```bash
 firebase deploy --only firestore:rules
 ```
 
-Phase 2 intentionally uses simple Firestore queries and does not require a composite-index file for its core flows.
+Phase 3 intentionally uses single-field Firestore queries for its core workflows and does not require a composite-index file.
 
 ### 5. Enable GitHub Pages
 
 In **GitHub → Settings → Pages**, publish from the `main` branch and repository root.
 
-The PWA service worker caches the Phase 2 application shell, including `src/lms.js` and `assets/lms.css`.
+The PWA service worker caches the Phase 3 application shell, including `src/lms.js`, `src/intelligence.js`, `assets/lms.css`, and `assets/intelligence.css`.
 
 ## Owner bootstrap
 
@@ -94,28 +94,30 @@ The Platform Owner is not selected from a signup dropdown. Both the application 
 
 `christophershelley257@gmail.com`
 
-On verified owner sign-in, ClassOS maintains the platform configuration and creates Phase 2 feature flags where needed.
+On verified owner sign-in, ClassOS maintains the platform configuration and enables the Phase 3 feature flags.
 
 ## User provisioning
 
 The Platform Owner can pre-register an exact email address, role, and optional school. The user then signs in independently with Google or email/password.
 
-Firestore rules allow the role claim only when Firebase reports that the matching address is verified. Users who sign up without pre-registered access remain in a pending state and cannot self-promote.
+Firestore rules allow the role claim only when Firebase reports that the matching address is verified. Users who sign up without pre-registered access remain pending and cannot self-promote.
 
-## Course workflow
-
-A normal first setup is:
+## Recommended setup workflow
 
 1. Create an organization.
 2. Add a school.
-3. Pre-register teacher, student, guardian, and/or administrator accounts.
-4. Have those users sign in and complete account activation.
-5. Create a course.
-6. Open the course and use **Roster** to assign teachers and students.
-7. Configure grade categories if weighted grading is desired.
-8. Create assignments and announcements.
-9. Teachers mark attendance and grade submissions.
-10. Link guardian accounts to student accounts from **People & Access** when Family View is needed.
+3. Pre-register teacher, student, guardian, counselor, and administrator accounts.
+4. Have those users sign in and activate their accounts.
+5. Create a course and assign its roster.
+6. Configure grade categories.
+7. Create assignments and mark attendance.
+8. Add course standards in **Learning Graph**.
+9. Map assignments to standards.
+10. Build reusable questions in **Assessments**.
+11. Create and publish an assessment.
+12. Students submit attempts.
+13. Teachers review attempts; objective items are automatically pre-scored from the protected key while short answers receive human scoring.
+14. Review the **Teacher Command Center**, **Student Support**, and **District Pulse** views as data accumulates.
 
 ## Firestore model
 
@@ -138,13 +140,41 @@ Phase 2 LMS collections:
 - `announcements`
 - `messages`
 
-Grade categories are stored on the related course document. Course membership is stored through `teacherIds` and `studentIds` on the course.
+Phase 3 collections:
+
+- `standards`
+- `questionBank`
+- `assessments`
+- `assessmentKeys`
+- `assessmentAttempts`
+- `interventions`
+
+Grade categories are stored on the related course document. Course membership is stored through `teacherIds` and `studentIds` on the course. Assignment-to-standard links are stored in `standardIds` on assignments. Assessment documents contain student-safe question snapshots; answer keys are stored separately in `assessmentKeys`.
+
+## Assessment security model
+
+ClassOS does not place correct answers inside assessment documents that students can read.
+
+The reusable `questionBank` and `assessmentKeys` collections are restricted to authorized educators. Published `assessments` contain only question prompts, options, points, and standard mappings. Students submit answers into `assessmentAttempts`. When an authorized reviewer opens an attempt, ClassOS reads the protected key and pre-scores objective items in the reviewer session. Short-answer scoring remains manual.
+
+This design keeps answer keys out of student browser access without adding Cloud Functions.
+
+## Student Pulse model
+
+Pulse uses existing academic evidence and always exposes its contributing factors. The status bands are:
+
+- **On track:** 80–100
+- **Watch:** 65–79
+- **Attention:** below 65
+- **Not enough data:** no usable evidence yet
+
+ClassOS also lists specific reasons such as multiple missing assignments, low course averages, recent unexcused absences, weak standards mastery, or workload collisions. Workload is an alert only and is not included in the Pulse score.
 
 ## Security model
 
-Firestore rules enforce the LMS permissions rather than relying only on hidden buttons in the browser.
+Firestore rules enforce access rather than relying only on hidden browser controls.
 
-Students can read course content for courses available to them and can create/update only their own submissions. Teachers can manage instructional data only for courses where they are rostered as teachers. School/district administrators receive school-scoped management access. Guardians can read academic data only for students linked to their guardian profile. The Platform Owner is protected by the verified bootstrap email at the security-rule layer.
+Students can read published assessments for their own courses and create only their own attempts. Students cannot read the question bank or answer-key collection. Teachers manage Phase 3 course records only for courses where they are rostered. Counselors and administrators receive school-scoped review/support access. Guardians can read linked-student academic evidence but cannot read internal intervention records. The Platform Owner remains protected by the verified bootstrap email at the rules layer.
 
 ## Development architecture
 
@@ -158,8 +188,8 @@ ClassOS remains framework-free for rapid generation and deployment:
 - Cloud Firestore
 - GitHub Pages
 
-There is no frontend build pipeline required to deploy the current application.
+There is no frontend build pipeline required to deploy the current application. GitHub Actions performs JavaScript syntax validation on the core shell, LMS module, intelligence module, Firebase config, and service worker.
 
 ## Next phase
 
-Phase 3 is intended to add the features that make ClassOS meaningfully different from a conventional LMS: assessments, question banks, standards, Learning Graph/mastery, Student Pulse, workload intelligence, interventions, counselor tools, advanced analytics, Teacher Command Center, and District Pulse.
+Phase 4 is the production-readiness pass: global search, notification polish, accessibility, UI consistency, imports/exports, school-year and term management, archival workflows, additional validation, support tools, performance cleanup, onboarding, and final deployment polish.
