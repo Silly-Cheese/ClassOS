@@ -12,7 +12,8 @@ const APP_SHELL = [
   './src/main.js',
   './src/lms.js',
   './src/intelligence.js',
-  './src/production.js'
+  './src/production.js',
+  './src/hardening.js'
 ];
 
 self.addEventListener('install', (event) => {
