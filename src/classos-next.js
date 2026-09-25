@@ -46,17 +46,22 @@ function decorateNavigation() {
   const nav = $('#primary-nav');
   if (!nav) return;
 
-  $$('.nav-item', nav).forEach((button) => {
+  $('.nav-item', nav).forEach((button) => {
     const span = $('span:first-child', button);
     if (!span) return;
     const key = routeKey(button);
+    if (span.dataset.classosIcon === key) return;
     span.innerHTML = iconFor(key);
+    span.dataset.classosIcon = key;
   });
 
   const settings = $('.sidebar-bottom .nav-item[data-route="settings"]');
   if (settings) {
     const span = $('span:first-child', settings);
-    if (span) span.innerHTML = iconFor('settings');
+    if (span && span.dataset.classosIcon !== 'settings') {
+      span.innerHTML = iconFor('settings');
+      span.dataset.classosIcon = 'settings';
+    }
   }
 }
 
@@ -112,6 +117,20 @@ function navigateTarget(target) {
   clickRoute(target);
 }
 
+function targetAvailable(target) {
+  if (target === 'course') return true;
+  if (target.indexOf('special:') === 0) {
+    const route = target.slice(8);
+    return Boolean(
+      $('#primary-nav [data-p3-route="' + route + '"]') ||
+      $('#primary-nav [data-p4-route="' + route + '"]') ||
+      $('#primary-nav [data-manage-route="' + route + '"]') ||
+      $('#primary-nav [data-workspace-route="' + route + '"]')
+    );
+  }
+  return Boolean($('#primary-nav [data-route="' + target + '"]'));
+}
+
 function contextTabs(page) {
   if (page === 'Course') {
     return [
@@ -164,7 +183,7 @@ function renderContextBar() {
 
   const page = currentPage();
   const kicker = currentKicker();
-  const tabs = contextTabs(page);
+  const tabs = contextTabs(page).filter((item) => targetAvailable(item[0]));
   const date = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
 
   const breadcrumb = '<div class="classos-breadcrumb"><span>ClassOS</span><span>/</span><strong>' +
