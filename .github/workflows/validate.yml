@@ -27,6 +27,7 @@ jobs:
           node --check src/auth-compat.js
           node --check src/onboarding.js
           node --check src/navigation.js
+          node --check src/classos-next.js
           node --check src/workspace.js
           node --check src/terms.js
           node --check src/course-tools.js
