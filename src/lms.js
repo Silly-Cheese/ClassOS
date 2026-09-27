@@ -869,7 +869,9 @@ export function createLms({ state, db, auth, helpers }) {
       const next = courseModules(c).filter((m) => m.id !== target.dataset.moduleId).map((m, index) => ({ ...m, position: index }));
       await updateDoc(doc(db, 'courses', c.id), { modules: next, updatedAt: serverTimestamp() });
       c.modules = next;
-      state.assignments.filter((a) => a.courseId === c.id && a.moduleId === target.dataset.moduleId).forEach((a) => { a.moduleId = ''; });
+      const affected = state.assignments.filter((a) => a.courseId === c.id && a.moduleId === target.dataset.moduleId);
+      await Promise.all(affected.map((a) => updateDoc(doc(db, 'assignments', a.id), { moduleId: '', updatedAt: serverTimestamp() })));
+      affected.forEach((a) => { a.moduleId = ''; });
       await logAction('course.module_remove', 'course', c.id, { moduleId: target.dataset.moduleId });
       toast('Module removed. Its assignments remain available as unassigned coursework.', 'success');
       showModuleManager(c);
