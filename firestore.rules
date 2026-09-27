@@ -479,7 +479,7 @@ service cloud.firestore {
         || (hasRole(['teacher'])
           && request.auth.uid in resource.data.teacherIds
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['gradeCategories', 'updatedAt']))
+            .hasOnly(['gradeCategories', 'modules', 'updatedAt']))
         || validInvitedStudentEnrollment(courseId);
 
       allow delete: if isOwner()
