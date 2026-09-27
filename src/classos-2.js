@@ -154,6 +154,108 @@ function makeCourseCardsActionable() {
   });
 }
 
+function enhanceAssignments() {
+  if ($('#page-title')?.textContent !== 'Assignments') return;
+  const content = $('#page-content');
+  const table = $('table', content);
+  if (!content || !table || $('.classos2-list-tools', content)) return;
+
+  const toolbar = $('.toolbar', content);
+  const tools = document.createElement('div');
+  tools.className = 'classos2-list-tools';
+  tools.innerHTML = `
+    <div class="classos2-grade-search">
+      <span aria-hidden="true">⌕</span>
+      <input type="search" data-classos2-filter="assignment" placeholder="Find an assignment…" autocomplete="off">
+    </div>
+    <div class="classos2-segmented" role="group" aria-label="Assignment filter">
+      <button class="active" data-classos2-assignment-status="all">All</button>
+      <button data-classos2-assignment-status="published">Published</button>
+      <button data-classos2-assignment-status="draft">Drafts</button>
+    </div>`;
+  (toolbar || table).insertAdjacentElement('afterend', tools);
+
+  let status = 'all';
+  const apply = () => {
+    const query = $('[data-classos2-filter="assignment"]', tools)?.value.trim().toLowerCase() || '';
+    $('tbody tr', table).forEach((row) => {
+      const text = row.textContent.toLowerCase();
+      const rowStatus = text.includes('draft') ? 'draft' : 'published';
+      row.hidden = Boolean(query && !text.includes(query)) || (status !== 'all' && rowStatus !== status);
+    });
+  };
+  $('[data-classos2-filter="assignment"]', tools)?.addEventListener('input', apply);
+  tools.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-classos2-assignment-status]');
+    if (!button) return;
+    status = button.dataset.classos2AssignmentStatus;
+    $('[data-classos2-assignment-status]', tools).forEach((item) => item.classList.toggle('active', item === button));
+    apply();
+  });
+}
+
+function enhancePeople() {
+  if ($('#page-title')?.textContent !== 'People') return;
+  const content = $('#page-content');
+  const table = $('table', content);
+  if (!content || !table || $('.classos2-people-tools', content)) return;
+
+  const tools = document.createElement('div');
+  tools.className = 'classos2-list-tools classos2-people-tools';
+  tools.innerHTML = `
+    <div class="classos2-grade-search">
+      <span aria-hidden="true">⌕</span>
+      <input type="search" data-classos2-filter="people" placeholder="Find a student, teacher, or guardian…" autocomplete="off">
+    </div>
+    <span class="classos2-table-count"></span>`;
+  table.parentElement?.insertAdjacentElement('beforebegin', tools);
+
+  const rows = $('tbody tr', table);
+  const count = $('.classos2-table-count', tools);
+  const apply = () => {
+    const query = $('[data-classos2-filter="people"]', tools)?.value.trim().toLowerCase() || '';
+    let shown = 0;
+    rows.forEach((row) => {
+      const visible = !query || row.textContent.toLowerCase().includes(query);
+      row.hidden = !visible;
+      if (visible) shown += 1;
+    });
+    if (count) count.textContent = `${shown} of ${rows.length} people`;
+  };
+  $('[data-classos2-filter="people"]', tools)?.addEventListener('input', apply);
+  apply();
+}
+
+function enhanceCourseHome() {
+  if ($('#page-title')?.textContent !== 'Course') return;
+  const content = $('#page-content');
+  if (!content || $('.classos2-course-toolkit', content)) return;
+  const hero = $('.hero', content);
+  if (!hero) return;
+
+  const toolkit = document.createElement('section');
+  toolkit.className = 'classos2-course-toolkit';
+  toolkit.innerHTML = `
+    <button data-classos2-route="assignments"><strong>Coursework</strong><span>Create, organize, and review assignments</span></button>
+    <button data-classos2-route="gradebook"><strong>Grades</strong><span>Enter scores and review progress</span></button>
+    <button data-classos2-route="attendance"><strong>Attendance</strong><span>Take or review attendance</span></button>
+    <button data-classos2-route="people"><strong>People</strong><span>View students and course members</span></button>
+  `;
+  hero.insertAdjacentElement('afterend', toolkit);
+
+  const coursework = $('.card', content).find((card) => /Coursework/i.test(card.textContent));
+  if (coursework) {
+    coursework.classList.add('classos2-coursework-card');
+    const list = $('.list', coursework);
+    if (list && !$('.classos2-coursework-label', coursework)) {
+      const label = document.createElement('div');
+      label.className = 'classos2-coursework-label';
+      label.innerHTML = '<strong>Learning plan</strong><span>Assignments are shown in due-date order. Module organization is the next structural upgrade.</span>';
+      list.insertAdjacentElement('beforebegin', label);
+    }
+  }
+}
+
 function addPageDescriptor() {
   const topbar = $('.topbar-left > div');
   if (!topbar || $('.classos2-page-desc', topbar)) return;
@@ -180,6 +282,9 @@ function decorate() {
   groupNavigation();
   addTeacherCommandCenter();
   enhanceGradebook();
+  enhanceAssignments();
+  enhancePeople();
+  enhanceCourseHome();
   makeCourseCardsActionable();
   addPageDescriptor();
   document.documentElement.classList.add('classos2');
