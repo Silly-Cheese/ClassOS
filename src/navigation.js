@@ -44,8 +44,17 @@ function desiredMarkup() {
   const administration = [];
 
   if (r === 'student') {
-    core.push(standard('courses', '▤', 'Courses'), standard('assignments', '✓', 'Assignments'), standard('gradebook', '▦', 'Grades'));
-    tools.push(standard('calendar', '□', 'Calendar', 'tools'), standard('inbox', '✉', 'Inbox', 'tools'), standard('absent', '↻', 'Absent Mode', 'tools'));
+    core.push(
+      standard('courses', '▤', 'Courses'),
+      standard('assignments', '✓', 'Assignments'),
+      p3('assessments', '◫', 'Assessments'),
+      standard('gradebook', '▦', 'Grades')
+    );
+    tools.push(
+      standard('calendar', '□', 'Calendar', 'tools'),
+      standard('absent', '↻', 'Absent Mode', 'tools'),
+      standard('inbox', '✉', 'Inbox', 'tools')
+    );
   } else if (r === 'guardian') {
     core.push(standard('family', '⌂', 'Family'), standard('courses', '▤', 'Courses'));
     tools.push(standard('inbox', '✉', 'Inbox', 'tools'));
