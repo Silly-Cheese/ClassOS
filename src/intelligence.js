@@ -1,7 +1,7 @@
 import { auth, db, OWNER_EMAIL } from './firebase.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc,
+  collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
   query, where, serverTimestamp, Timestamp
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
@@ -458,19 +458,40 @@ function assessmentView() {
 
 function learningView() {
   const selected = course(state.selectedCourseId);
-  const studentId = isStudent() ? uid() : state.selectedStudentId;
-  if (!selected || !studentId) return '<div class="empty-state"><strong>Learning Graph unavailable</strong>A course and student are required.</div>';
-  if (!(selected.studentIds || []).includes(studentId) && !isGuardian()) {
-    state.selectedStudentId = (selected.studentIds || [])[0] || null;
-  }
-  const effectiveStudent = isStudent() ? uid() : state.selectedStudentId;
-  const standards = state.standards.filter((item) => item.courseId === selected.id);
-  const pulse = studentPulse(effectiveStudent);
+  if (!selected) return '<div class="empty-state"><strong>No course available</strong>Select a course before opening Standards & Mastery.</div>';
   const manager = canManageCourse(selected.id);
-  return `${hero('LEARNING GRAPH', esc(personName(effectiveStudent)), `Standards mastery for ${esc(selected.name)} is calculated from graded work that has been explicitly mapped to a standard.`, manager ? `<button class="btn btn-primary" data-p3-action="new-standard">Add standard</button><button class="btn btn-secondary" data-p3-action="map-assignment">Map assignment</button>` : '')}${coursePicker('learning')}${studentPicker('learning')}
-    <section class="section grid grid-4">${metric('Pulse', pulse.score === null ? '—' : pulse.score.toFixed(0), pulse.status)}${metric('Course grade', pulse.grade === null ? '—' : `${pulse.grade.toFixed(1)}%`, 'Across graded assignments')}${metric('Mastery', pulse.mastery === null ? '—' : `${pulse.mastery.toFixed(1)}%`, 'Across measured standards')}${metric('Missing', pulse.missing, 'Past-due assignments')}</section>
-    <section class="section card"><div class="section-head"><div><span class="eyebrow">EXPLAINABLE PULSE</span><h3>Why ClassOS shows ${esc(pulse.status)}</h3></div>${pulseBadge(pulse)}</div><div class="pulse-factors">${pulse.factors.map((factor) => `<div><span>${esc(factor.key)}</span><strong>${factor.value.toFixed(0)}</strong><small>${factor.weight}% base weight</small></div>`).join('')}</div><div class="callout" style="margin-top:16px"><strong>How it works:</strong> ClassOS combines available grade (35%), completion (30%), attendance (20%), and mastery (15%) evidence, then reweights only the factors that actually have data. Workload is shown as an alert but does not lower the academic Pulse.</div><div class="p3-reasons">${pulse.reasons.map((reason) => `<span>• ${esc(reason)}</span>`).join('')}</div></section>
-    <section class="section"><div class="section-head"><div><span class="eyebrow">STANDARDS</span><h3>${esc(selected.name)} mastery</h3></div></div>${standards.length ? `<div class="mastery-grid">${standards.map((item) => { const m = masteryFor(effectiveStudent, item.id); const [label, cls] = masteryLabel(m.percent); return `<article class="card mastery-card"><div class="mastery-head"><div><span class="eyebrow">${esc(item.code)}</span><h3>${esc(item.title)}</h3></div><span class="pill ${cls}">${esc(label)}</span></div><p>${esc(item.description || 'No description')}</p><div class="mastery-meter"><span style="width:${Math.max(0, Math.min(100, m.percent || 0))}%"></span></div><div class="mastery-foot"><strong>${m.percent === null ? '—' : `${m.percent.toFixed(1)}%`}</strong><span>${m.evidence} evidence item${m.evidence === 1 ? '' : 's'}</span></div></article>`; }).join('')}</div>` : '<div class="empty-state"><strong>No standards yet</strong>Teachers can add standards and map assignments or assessment questions to them.</div>'}</section>`;
+  const students = (selected.studentIds || []).map((id) => person(id)).filter(Boolean);
+  if (!isStudent() && !isGuardian() && state.selectedStudentId && !(selected.studentIds || []).includes(state.selectedStudentId)) state.selectedStudentId = students[0]?.id || null;
+  if (!isStudent() && !isGuardian() && !state.selectedStudentId) state.selectedStudentId = students[0]?.id || null;
+
+  const effectiveStudent = isStudent() ? uid() : isGuardian() ? (state.profile?.linkedStudentIds || []).find((id) => (selected.studentIds || []).includes(id)) || null : state.selectedStudentId;
+  const standards = state.standards.filter((item) => item.courseId === selected.id).sort((a,b) => String(a.code || '').localeCompare(String(b.code || '')));
+  const mappedAssignments = state.assignments.filter((item) => item.courseId === selected.id && (item.standardIds || []).length).length;
+  const mappedQuestions = state.questions.filter((item) => item.courseId === selected.id && (item.standardIds || []).length).length;
+
+  const managerActions = manager ? `<button class="btn btn-primary" data-p3-action="manage-standards">Manage standards</button><button class="btn btn-secondary" data-p3-action="bulk-standard">Bulk add</button><button class="btn btn-secondary" data-p3-action="map-assignment">Map evidence</button>` : '';
+  const pulse = effectiveStudent ? studentPulse(effectiveStudent) : null;
+
+  const masteryCards = effectiveStudent && standards.length ? standards.map((item) => {
+    const m = masteryFor(effectiveStudent, item.id);
+    const [label, cls] = masteryLabel(m.percent);
+    const usage = standardUsage(item.id);
+    return `<article class="card mastery-card"><div class="mastery-head"><div><span class="eyebrow">${esc(item.code)}</span><h3>${esc(item.title)}</h3></div><span class="pill ${cls}">${esc(label)}</span></div><p>${esc(item.description || 'No description')}</p><div class="mastery-meter"><span style="width:${Math.max(0, Math.min(100, m.percent || 0))}%"></span></div><div class="mastery-foot"><strong>${m.percent === null ? '—' : `${m.percent.toFixed(1)}%`}</strong><span>${m.evidence} evidence item${m.evidence === 1 ? '' : 's'} · ${usage.total} mapped source${usage.total === 1 ? '' : 's'}</span></div>${manager ? `<div class="mastery-actions"><button class="link-button" data-p3-action="edit-standard" data-standard-id="${esc(item.id)}">Edit</button><button class="link-button" data-p3-action="map-standard" data-standard-id="${esc(item.id)}">Map evidence</button></div>` : ''}</article>`;
+  }).join('') : '';
+
+  return `${hero('STANDARDS & MASTERY', esc(selected.name), 'Create standards, connect evidence, and see mastery without making standards management a separate chore.', managerActions)}${coursePicker('learning')}${studentPicker('learning')}
+    <section class="section grid grid-4">
+      ${metric('Standards', standards.length, standards.length ? 'Course learning targets' : 'Start with one or bulk add')}
+      ${metric('Mapped assignments', mappedAssignments, 'Assignments with standards')}
+      ${metric('Mapped questions', mappedQuestions, 'Question-bank evidence')}
+      ${metric('Students', (selected.studentIds || []).length, 'Course roster')}
+    </section>
+    ${manager ? `<section class="section card standards-control-center"><div class="section-head"><div><span class="eyebrow">STANDARDS CONTROL CENTER</span><h3>Build and maintain the learning targets</h3><p>Create one, paste many, then map coursework to them.</p></div><button class="btn btn-secondary" data-p3-action="manage-standards">Open manager</button></div><div class="standard-quick-actions"><button data-p3-action="new-standard"><strong>Add one standard</strong><span>Best for a quick correction or new target</span></button><button data-p3-action="bulk-standard"><strong>Bulk add standards</strong><span>Paste an entire unit or course set</span></button><button data-p3-action="map-assignment"><strong>Map assignment evidence</strong><span>Connect coursework to mastery</span></button></div></section>` : ''}
+    ${pulse ? `<section class="section grid grid-4">${metric('Pulse', pulse.score === null ? '—' : pulse.score.toFixed(0), pulse.status)}${metric('Course grade', pulse.grade === null ? '—' : `${pulse.grade.toFixed(1)}%`, 'Across graded assignments')}${metric('Mastery', pulse.mastery === null ? '—' : `${pulse.mastery.toFixed(1)}%`, 'Across measured standards')}${metric('Missing', pulse.missing, 'Past-due assignments')}</section>` : ''}
+    ${pulse ? `<section class="section card"><div class="section-head"><div><span class="eyebrow">EXPLAINABLE PULSE</span><h3>Why ClassOS shows ${esc(pulse.status)}</h3></div>${pulseBadge(pulse)}</div><div class="pulse-factors">${pulse.factors.map((factor) => `<div><span>${esc(factor.key)}</span><strong>${factor.value.toFixed(0)}</strong><small>${factor.weight}% base weight</small></div>`).join('')}</div><div class="p3-reasons">${pulse.reasons.map((reason) => `<span>• ${esc(reason)}</span>`).join('')}</div></section>` : manager ? '<section class="section callout info"><strong>No student selected yet.</strong><br>You can still create and manage standards now. Mastery appears when the course has students and evidence.</section>' : ''}
+    <section class="section"><div class="section-head"><div><span class="eyebrow">STANDARDS</span><h3>${effectiveStudent ? `${esc(personName(effectiveStudent))} · mastery` : 'Course standards'}</h3><p>${effectiveStudent ? 'Mastery is based only on graded evidence explicitly mapped to each standard.' : 'Create and map standards before evidence exists.'}</p></div>${manager ? '<button class="link-button" data-p3-action="manage-standards">Manage standards</button>' : ''}</div>
+      ${standards.length ? effectiveStudent ? `<div class="mastery-grid">${masteryCards}</div>` : `<div class="standards-table card"><div class="list">${standards.map((item) => { const usage = standardUsage(item.id); return `<div class="list-row"><div class="list-main"><strong>${esc(item.code)} — ${esc(item.title)}</strong><span>${esc(item.description || 'No description')} · ${usage.total} mapped source${usage.total === 1 ? '' : 's'}</span></div><button class="pill clickable" data-p3-action="edit-standard" data-standard-id="${esc(item.id)}">Edit</button></div>`; }).join('')}</div></div>` : '<div class="empty-state"><strong>No standards yet</strong>Use Add standard or Bulk add to create the course learning targets.</div>'}
+    </section>`;
 }
 
 function supportView() {
@@ -554,17 +575,63 @@ function openModal(title, body, kicker = 'CLASSOS INTELLIGENCE') {
 function closeModal() { $('p3-modal')?.classList.add('hidden'); if ($('p3-modal-body')) $('p3-modal-body').innerHTML = ''; }
 
 function standardsForSelected() { return state.standards.filter((item) => item.courseId === state.selectedCourseId); }
-function questionsForSelected() { return state.questions.filter((item) => item.courseId === state.selectedCourseId); }
 
-function showStandardForm() {
-  openModal('Add standard', `<form id="p3-standard-form"><div class="form-grid"><div class="field"><label>Code</label><input name="code" required placeholder="ELA.11.R.1"></div><div class="field"><label>Title</label><input name="title" required placeholder="Evaluate evidence"></div><div class="field span-2"><label>Description</label><textarea name="description" rows="4" placeholder="What students should know or be able to do"></textarea></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Add standard</button></div></form>`, 'LEARNING GRAPH');
+function standardUsage(standardId) {
+  const assignmentCount = state.assignments.filter((item) => (item.standardIds || []).includes(standardId)).length;
+  const questionCount = state.questions.filter((item) => (item.standardIds || []).includes(standardId)).length;
+  return { assignmentCount, questionCount, total: assignmentCount + questionCount };
 }
 
-function showMapAssignment() {
+function showStandardForm(standardId = '') {
+  const existing = standardId ? state.standards.find((item) => item.id === standardId) : null;
+  const title = existing ? 'Edit standard' : 'Add standard';
+  openModal(title, `<form id="p3-standard-form">
+    <input type="hidden" name="standardId" value="${esc(existing?.id || '')}">
+    <div class="form-grid">
+      <div class="field"><label>Code</label><input name="code" required maxlength="40" value="${esc(existing?.code || '')}" placeholder="ELA.11.R.1"></div>
+      <div class="field"><label>Title</label><input name="title" required maxlength="140" value="${esc(existing?.title || '')}" placeholder="Evaluate evidence"></div>
+      <div class="field span-2"><label>Description</label><textarea name="description" rows="4" placeholder="What students should know or be able to do">${esc(existing?.description || '')}</textarea></div>
+    </div>
+    <div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${existing ? 'Save changes' : 'Add standard'}</button></div>
+  </form>`, 'STANDARDS');
+}
+
+function showBulkStandardForm() {
+  openModal('Add standards in bulk', `<form id="p3-standard-bulk-form">
+    <div class="callout info" style="margin-bottom:14px"><strong>Fast entry:</strong> put one standard per line using <code>CODE | Title | Description</code>. Description is optional.</div>
+    <div class="field"><label>Standards</label><textarea name="standards" rows="12" required placeholder="ELA.11.R.1 | Evaluate evidence | Evaluate evidence from multiple sources&#10;ELA.11.W.2 | Informative writing"></textarea></div>
+    <div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Add standards</button></div>
+  </form>`, 'STANDARDS');
+}
+
+function showStandardManager() {
+  const selected = course(state.selectedCourseId);
+  if (!selected || !canManageCourse(selected.id)) return toast('Choose a course you manage.', 'error');
+  const standards = standardsForSelected().sort((a,b) => String(a.code || '').localeCompare(String(b.code || '')));
+  openModal(`Standards · ${selected.name}`, `
+    <div class="standard-manager-head">
+      <div class="callout info"><strong>Manage your course standards.</strong><br>Create, edit, map, and remove standards from one place.</div>
+      <div class="toolbar-group"><button class="btn btn-secondary" data-p3-action="bulk-standard">Bulk add</button><button class="btn btn-primary" data-p3-action="new-standard">Add standard</button></div>
+    </div>
+    <div class="standard-manager-list">
+      ${standards.length ? standards.map((item) => {
+        const usage = standardUsage(item.id);
+        return `<article class="standard-manager-row"><div class="standard-manager-main"><span class="eyebrow">${esc(item.code || 'STANDARD')}</span><strong>${esc(item.title)}</strong><p>${esc(item.description || 'No description')}</p><div class="standard-usage"><span>${usage.assignmentCount} assignment${usage.assignmentCount === 1 ? '' : 's'}</span><span>${usage.questionCount} question${usage.questionCount === 1 ? '' : 's'}</span></div></div><div class="row-actions"><button class="pill clickable" data-p3-action="edit-standard" data-standard-id="${esc(item.id)}">Edit</button><button class="pill clickable info" data-p3-action="map-standard" data-standard-id="${esc(item.id)}">Map</button><button class="pill clickable danger" data-p3-action="delete-standard" data-standard-id="${esc(item.id)}">Delete</button></div></article>`;
+      }).join('') : '<div class="empty-state"><strong>No standards yet</strong>Add one standard or paste a whole set at once.</div>'}
+    </div>
+  `, 'STANDARDS');
+}
+function questionsForSelected() { return state.questions.filter((item) => item.courseId === state.selectedCourseId); }
+
+function showMapAssignment(preselectedStandardId = '') {
   const assignments = state.assignments.filter((item) => item.courseId === state.selectedCourseId);
   const standards = standardsForSelected();
   if (!assignments.length || !standards.length) return toast('Add at least one assignment and standard first.', 'error');
-  openModal('Map assignment to standard', `<form id="p3-map-form"><div class="field"><label>Assignment</label><select name="assignmentId">${assignments.map((item) => `<option value="${esc(item.id)}">${esc(item.title)}</option>`).join('')}</select></div><div class="field"><label>Standard</label><select name="standardId">${standards.map((item) => `<option value="${esc(item.id)}">${esc(item.code)} — ${esc(item.title)}</option>`).join('')}</select></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Map evidence</button></div></form>`, 'LEARNING GRAPH');
+  openModal('Map assignment evidence', `<form id="p3-map-form">
+    <div class="field"><label>Assignment</label><select name="assignmentId">${assignments.map((item) => `<option value="${esc(item.id)}">${esc(item.title)}</option>`).join('')}</select></div>
+    <div class="field"><label>Standards</label><div class="p3-check-list standard-map-list">${standards.map((item) => `<label><input type="checkbox" name="standardId" value="${esc(item.id)}" ${preselectedStandardId === item.id ? 'checked' : ''}><span><strong>${esc(item.code)} — ${esc(item.title)}</strong><small>${esc(item.description || 'No description')}</small></span></label>`).join('')}</div></div>
+    <div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Save mappings</button></div>
+  </form>`, 'STANDARDS');
 }
 
 function showQuestionForm() {
@@ -651,14 +718,40 @@ async function handleForm(form) {
   const data = new FormData(form);
   if (form.id === 'p3-standard-form') {
     const selected = course(state.selectedCourseId); if (!selected || !canManageCourse(selected.id)) throw new Error('Choose a course you manage.');
-    await addDoc(collection(db, 'standards'), { courseId: selected.id, schoolId: selected.schoolId, code: String(data.get('code')).trim(), title: String(data.get('title')).trim(), description: String(data.get('description') || '').trim(), createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    const standardId = String(data.get('standardId') || '');
+    const payload = { code: String(data.get('code')).trim(), title: String(data.get('title')).trim(), description: String(data.get('description') || '').trim(), updatedAt: serverTimestamp() };
+    if (!payload.code || !payload.title) throw new Error('Code and title are required.');
+    if (standardId) {
+      const existing = state.standards.find((item) => item.id === standardId && item.courseId === selected.id);
+      if (!existing) throw new Error('Standard unavailable.');
+      await updateDoc(doc(db, 'standards', standardId), payload);
+      closeModal(); toast('Standard updated.', 'success'); return render('learning');
+    }
+    await addDoc(collection(db, 'standards'), { courseId: selected.id, schoolId: selected.schoolId, ...payload, createdBy: uid(), createdAt: serverTimestamp() });
     closeModal(); toast('Standard added.', 'success'); return render('learning');
   }
+  if (form.id === 'p3-standard-bulk-form') {
+    const selected = course(state.selectedCourseId); if (!selected || !canManageCourse(selected.id)) throw new Error('Choose a course you manage.');
+    const lines = String(data.get('standards') || '').split('\n').map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) throw new Error('Add at least one standard.');
+    const parsed = lines.map((line, index) => {
+      const [code, title, ...rest] = line.split('|').map((part) => part.trim());
+      if (!code || !title) throw new Error(`Line ${index + 1} needs CODE | Title.`);
+      return { code, title, description: rest.join(' | ') };
+    });
+    const existingCodes = new Set(standardsForSelected().map((item) => String(item.code || '').toLowerCase()));
+    const toCreate = parsed.filter((item) => !existingCodes.has(item.code.toLowerCase()));
+    if (!toCreate.length) throw new Error('Every code in that list already exists in this course.');
+    await Promise.all(toCreate.map((item) => addDoc(collection(db, 'standards'), { courseId: selected.id, schoolId: selected.schoolId, ...item, createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() })));
+    closeModal(); toast(`${toCreate.length} standard${toCreate.length === 1 ? '' : 's'} added.`, 'success'); return render('learning');
+  }
   if (form.id === 'p3-map-form') {
-    const assignmentId = String(data.get('assignmentId')); const standardId = String(data.get('standardId'));
+    const assignmentId = String(data.get('assignmentId'));
+    const standardIds = data.getAll('standardId').map(String);
     const assignmentItem = state.assignments.find((item) => item.id === assignmentId); if (!assignmentItem || !canManageCourse(assignmentItem.courseId)) throw new Error('Invalid assignment.');
-    await updateDoc(doc(db, 'assignments', assignmentId), { standardIds: [...new Set([...(assignmentItem.standardIds || []), standardId])], updatedAt: serverTimestamp() });
-    closeModal(); toast('Assignment mapped to the Learning Graph.', 'success'); return render('learning');
+    if (!standardIds.length) throw new Error('Select at least one standard.');
+    await updateDoc(doc(db, 'assignments', assignmentId), { standardIds: [...new Set(standardIds)], updatedAt: serverTimestamp() });
+    closeModal(); toast('Assignment mappings updated.', 'success'); return render('learning');
   }
   if (form.id === 'p3-question-form') {
     const selected = course(state.selectedCourseId); if (!selected || !canManageCourse(selected.id)) throw new Error('Choose a course you manage.');
@@ -721,7 +814,30 @@ async function handleAction(event) {
   if (action === 'select-course') { state.selectedCourseId = target.dataset.courseId; await render(target.dataset.route || state.route); }
   if (action === 'select-student' && target.tagName === 'SELECT') { state.selectedStudentId = target.value; await render(target.dataset.route || state.route); }
   if (action === 'new-standard') showStandardForm();
+  if (action === 'bulk-standard') showBulkStandardForm();
+  if (action === 'manage-standards') showStandardManager();
+  if (action === 'edit-standard') showStandardForm(target.dataset.standardId);
+  if (action === 'map-standard') showMapAssignment(target.dataset.standardId);
   if (action === 'map-assignment') showMapAssignment();
+  if (action === 'delete-standard') {
+    const item = state.standards.find((standard) => standard.id === target.dataset.standardId);
+    if (!item || !canManageCourse(item.courseId)) return true;
+    const usage = standardUsage(item.id);
+    openModal('Delete standard?', `<div class="callout warning"><strong>${esc(item.code)} — ${esc(item.title)}</strong><br>This standard is connected to ${usage.assignmentCount} assignment${usage.assignmentCount === 1 ? '' : 's'} and ${usage.questionCount} question${usage.questionCount === 1 ? '' : 's'}. Deleting it removes those mappings but does not delete the assignments or questions.</div><div class="modal-actions"><button class="btn btn-secondary" data-p3-action="manage-standards">Cancel</button><button class="btn btn-danger" data-p3-action="confirm-delete-standard" data-standard-id="${esc(item.id)}">Delete standard</button></div>`, 'STANDARDS');
+  }
+  if (action === 'confirm-delete-standard') {
+    const standardId = target.dataset.standardId;
+    const item = state.standards.find((standard) => standard.id === standardId);
+    if (!item || !canManageCourse(item.courseId)) return true;
+    const affectedAssignments = state.assignments.filter((assignment) => (assignment.standardIds || []).includes(standardId));
+    const affectedQuestions = state.questions.filter((question) => (question.standardIds || []).includes(standardId));
+    await Promise.all([
+      ...affectedAssignments.map((assignment) => updateDoc(doc(db, 'assignments', assignment.id), { standardIds: (assignment.standardIds || []).filter((id) => id !== standardId), updatedAt: serverTimestamp() })),
+      ...affectedQuestions.map((question) => updateDoc(doc(db, 'questionBank', question.id), { standardIds: (question.standardIds || []).filter((id) => id !== standardId), updatedAt: serverTimestamp() }))
+    ]);
+    await deleteDoc(doc(db, 'standards', standardId));
+    closeModal(); toast('Standard deleted and mappings cleaned up.', 'success'); await render('learning');
+  }
   if (action === 'new-question') showQuestionForm();
   if (action === 'new-assessment') showAssessmentForm();
   if (action === 'take-assessment') showTakeAssessment(target.dataset.assessmentId);
@@ -740,7 +856,7 @@ function navItemsForRole() {
   const items = [];
   if (routeAllowed('command')) items.push(['command', '◈', 'Command Center']);
   if (routeAllowed('assessments')) items.push(['assessments', '✓', 'Assessments']);
-  if (routeAllowed('learning')) items.push(['learning', '⌁', 'Learning Graph']);
+  if (routeAllowed('learning')) items.push(['learning', '⌁', 'Standards & Mastery']);
   if (routeAllowed('support')) items.push(['support', '+', 'Student Support']);
   if (routeAllowed('district')) items.push(['district', '▦', 'District Pulse']);
   return items;

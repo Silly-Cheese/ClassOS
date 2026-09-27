@@ -88,7 +88,7 @@ const titleByKey = {
   dashboard: 'Home', courses: 'Courses', assignments: 'Assignments', gradebook: 'Gradebook',
   calendar: 'Calendar', attendance: 'Attendance', inbox: 'Inbox', absent: 'Absent Mode', family: 'Family',
   people: 'People', organizations: 'Organizations', platform: 'Platform',
-  assessments: 'Assessments', command: 'Command Center', support: 'Student Support', district: 'District Pulse',
+  assessments: 'Assessments', learning: 'Standards & Mastery', command: 'Command Center', support: 'Student Support', district: 'District Pulse',
   operations: 'Operations', manage: 'Manage', workspace: 'Workspace'
 };
 
@@ -131,6 +131,7 @@ function normalizeDynamicItems() {
   if (!nav) return;
   const assignments = [
     ['.p3-nav[data-p3-route="assessments"]', 'tools'],
+    ['.p3-nav[data-p3-route="learning"]', 'tools'],
     ['.p3-nav[data-p3-route="command"]', 'tools'],
     ['.p3-nav[data-p3-route="support"]', 'tools'],
     ['.p3-nav[data-p3-route="district"]', 'tools'],

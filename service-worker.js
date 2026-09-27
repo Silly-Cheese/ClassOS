@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classos-2.0-v20';
+const CACHE_NAME = 'classos-2.0-v21';
 const APP_SHELL = [
   './',
   './index.html',

@@ -248,15 +248,15 @@ function enhanceCourseHome() {
     toolkit.innerHTML = `
       <button data-classos2-route="assignments"><strong>Assignments</strong><span>See upcoming, submitted, and missing work</span></button>
       <button data-classos2-route="assessments"><strong>Assessments</strong><span>Open quizzes and tests for this course</span></button>
+      <button data-classos2-route="learning"><strong>Standards & Mastery</strong><span>See learning targets and mastery progress</span></button>
       <button data-classos2-route="gradebook"><strong>Grades</strong><span>Review scores and course progress</span></button>
-      <button data-classos2-route="calendar"><strong>Calendar</strong><span>See coursework dates and deadlines</span></button>
     `;
   } else if (isTeacherLike()) {
     toolkit.innerHTML = `
       <button data-classos2-route="assignments"><strong>Coursework</strong><span>Create, organize, and review assignments</span></button>
       <button data-classos2-route="assessments"><strong>Assessments</strong><span>Build quizzes, tests, and question banks</span></button>
+      <button data-classos2-route="learning"><strong>Standards</strong><span>Create learning targets and review mastery</span></button>
       <button data-classos2-route="grading"><strong>Needs Grading</strong><span>Clear submitted work efficiently</span></button>
-      <button data-classos2-route="gradebook"><strong>Gradebook</strong><span>Review student grades and progress</span></button>
     `;
   } else {
     toolkit.innerHTML = `
@@ -312,6 +312,7 @@ function addPageDescriptor() {
     Course: 'Learning, coursework, and class updates',
     Assignments: 'Create, collect, and review coursework',
     Assessments: 'Quizzes, tests, and assessment results',
+    'Standards & Mastery': 'Learning targets, evidence, and mastery progress',
     Gradebook: 'Grades and academic progress',
     Grades: 'Your grades and course progress',
     'Needs Grading': 'One queue for submitted work across your courses',
