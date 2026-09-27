@@ -84,7 +84,7 @@ function installQuickActionRouting() {
     const button = event.target.closest('[data-classos2-route]');
     if (!button) return;
     const route = button.dataset.classos2Route;
-    const target = document.querySelector(`#primary-nav [data-route="${route}"]`);
+    const target = document.querySelector(`#primary-nav [data-route="${route}"], #primary-nav [data-p3-route="${route}"]`);
     if (target) target.click();
   });
 }
@@ -235,12 +235,29 @@ function enhanceCourseHome() {
 
   const toolkit = document.createElement('section');
   toolkit.className = 'classos2-course-toolkit';
-  toolkit.innerHTML = `
-    <button data-classos2-route="assignments"><strong>Coursework</strong><span>Create, organize, and review assignments</span></button>
-    <button data-classos2-route="gradebook"><strong>Grades</strong><span>Enter scores and review progress</span></button>
-    <button data-classos2-route="attendance"><strong>Attendance</strong><span>Take or review attendance</span></button>
-    <button data-classos2-route="people"><strong>People</strong><span>View students and course members</span></button>
-  `;
+  const role = roleText();
+  if (role === 'Student') {
+    toolkit.innerHTML = `
+      <button data-classos2-route="assignments"><strong>Assignments</strong><span>See upcoming, submitted, and missing work</span></button>
+      <button data-classos2-route="assessments"><strong>Assessments</strong><span>Open quizzes and tests for this course</span></button>
+      <button data-classos2-route="gradebook"><strong>Grades</strong><span>Review scores and course progress</span></button>
+      <button data-classos2-route="calendar"><strong>Calendar</strong><span>See coursework dates and deadlines</span></button>
+    `;
+  } else if (isTeacherLike()) {
+    toolkit.innerHTML = `
+      <button data-classos2-route="assignments"><strong>Coursework</strong><span>Create, organize, and review assignments</span></button>
+      <button data-classos2-route="assessments"><strong>Assessments</strong><span>Build quizzes, tests, and question banks</span></button>
+      <button data-classos2-route="grading"><strong>Needs Grading</strong><span>Clear submitted work efficiently</span></button>
+      <button data-classos2-route="gradebook"><strong>Gradebook</strong><span>Review student grades and progress</span></button>
+    `;
+  } else {
+    toolkit.innerHTML = `
+      <button data-classos2-route="assignments"><strong>Coursework</strong><span>Review assignments and due dates</span></button>
+      <button data-classos2-route="gradebook"><strong>Grades</strong><span>Review academic progress</span></button>
+      <button data-classos2-route="attendance"><strong>Attendance</strong><span>Review attendance records</span></button>
+      <button data-classos2-route="inbox"><strong>Inbox</strong><span>Open course communication</span></button>
+    `;
+  }
   hero.insertAdjacentElement('afterend', toolkit);
 
   const coursework = $('.card', content).find((card) => /Coursework/i.test(card.textContent));
@@ -288,25 +305,34 @@ function enhanceGradingQueue() {
 
 function addPageDescriptor() {
   const topbar = $('.topbar-left > div');
-  if (!topbar || $('.classos2-page-desc', topbar)) return;
+  if (!topbar) return;
   const page = ($('#page-title')?.textContent || '').trim();
   const descriptions = {
     Home: 'What needs your attention right now',
     Courses: 'Your classes and course spaces',
-    Course: 'Teach, organize, and communicate',
-    Assignments: 'Create, collect, and grade work',
-    Gradebook: 'Fast, spreadsheet-style grading',
+    Course: 'Learning, coursework, and class updates',
+    Assignments: 'Create, collect, and review coursework',
+    Assessments: 'Quizzes, tests, and assessment results',
+    Gradebook: 'Grades and academic progress',
+    Grades: 'Your grades and course progress',
     'Needs Grading': 'One queue for submitted work across your courses',
     Attendance: 'Record and review attendance',
     Calendar: 'Plan coursework and deadlines',
     Inbox: 'Classroom communication',
-    People: 'Students and course members'
+    People: 'Students and course members',
+    'Absent Mode': 'Catch up after an absence'
   };
-  if (!descriptions[page]) return;
-  const p = document.createElement('p');
-  p.className = 'classos2-page-desc';
+  let p = $('.classos2-page-desc', topbar);
+  if (!descriptions[page]) {
+    p?.remove();
+    return;
+  }
+  if (!p) {
+    p = document.createElement('p');
+    p.className = 'classos2-page-desc';
+    topbar.appendChild(p);
+  }
   p.textContent = descriptions[page];
-  topbar.appendChild(p);
 }
 
 function decorate() {
