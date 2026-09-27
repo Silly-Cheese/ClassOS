@@ -226,7 +226,23 @@ async function refreshData() {
     const snapshot = await getDoc(doc(db, 'schools', id));
     if (snapshot.exists()) state.schools.push({ id: snapshot.id, ...snapshot.data() });
   }
-  if (state.profile?.schoolIds?.length) {
+  const currentRole = state.profile?.role || '';
+  if (currentRole === 'student' && state.user?.uid) {
+    const snapshot = await getDocs(query(collection(db, 'courses'), where('studentIds', 'array-contains', state.user.uid)));
+    state.courses = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+  } else if (currentRole === 'teacher' && state.user?.uid) {
+    const snapshot = await getDocs(query(collection(db, 'courses'), where('teacherIds', 'array-contains', state.user.uid)));
+    state.courses = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+  } else if (currentRole === 'guardian') {
+    const linked = (state.profile?.linkedStudentIds || []).slice(0, 10);
+    const batches = await Promise.all(linked.map(async (studentId) => {
+      const snapshot = await getDocs(query(collection(db, 'courses'), where('studentIds', 'array-contains', studentId)));
+      return snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    }));
+    const map = new Map();
+    batches.flat().forEach((item) => map.set(item.id, item));
+    state.courses = [...map.values()];
+  } else if (state.profile?.schoolIds?.length) {
     const snapshot = await getDocs(query(collection(db, 'courses'), where('schoolId', 'in', state.profile.schoolIds.slice(0, 10))));
     state.courses = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
   }
@@ -508,6 +524,16 @@ function wire() {
 
 wire();
 setMode('signin');
+
+window.addEventListener('classos:enrollment-updated', async () => {
+  if (!state.user || state.profile?.role !== 'student') return;
+  try {
+    await render(state.route || 'dashboard');
+    toast('Your course enrollment is ready.', 'success');
+  } catch (error) {
+    console.warn('ClassOS could not refresh after enrollment', error);
+  }
+});
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
