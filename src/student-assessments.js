@@ -76,11 +76,34 @@ function render() {
   content.innerHTML = `<section class="hero"><span class="eyebrow">SECURE ASSESSMENTS</span><h1>Assessments</h1><p>Only published assessments from your enrolled courses appear here. Correct answers are stored separately and are never delivered to your account.</p></section><section class="section grid grid-3">${cards || '<div class="empty-state"><strong>No published assessments</strong>Your teachers have not published an assessment for your courses.</div>'}</section>`;
 }
 
+function shuffled(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function presentedItems(assessment) {
+  let items = [...(assessment.items || [])];
+  const count = Number(assessment.randomQuestionCount || 0);
+  if (count > 0 && count < items.length) items = shuffled(items).slice(0, count);
+  else if (assessment.shuffleQuestions) items = shuffled(items);
+  if (assessment.shuffleAnswers) {
+    items = items.map((q) => q.type === 'multiple_choice' ? { ...q, options: shuffled(q.options || []) } : q);
+  }
+  return items;
+}
+
 function showTake(id) {
   const assessment = state.assessments.find((item) => item.id === id);
   if (!assessment || state.attempts.some((item) => item.assessmentId === id)) return toast('That assessment is no longer available.', 'error');
-  const questions = (assessment.items || []).map((question, index) => `<article class="p3-question"><div class="p3-question-number">${index + 1}</div><div><h4>${esc(question.prompt)}</h4><span class="pill">${Number(question.points || 0)} pts</span>${question.type === 'multiple_choice' ? `<div class="p3-answer-options">${(question.options || []).map((option) => `<label><input type="radio" name="answer__${esc(question.id)}" value="${esc(option)}" required><span>${esc(option)}</span></label>`).join('')}</div>` : question.type === 'true_false' ? `<div class="p3-answer-options"><label><input type="radio" name="answer__${esc(question.id)}" value="true" required><span>True</span></label><label><input type="radio" name="answer__${esc(question.id)}" value="false" required><span>False</span></label></div>` : `<textarea name="answer__${esc(question.id)}" rows="5" required placeholder="Your response"></textarea>`}</div></article>`).join('');
-  openModal(assessment.title, `<form id="sa-attempt-form" data-id="${esc(assessment.id)}"><div class="callout info" style="margin-bottom:18px"><strong>${Number(assessment.pointsPossible || 0)} points</strong> · Due ${esc(fmt(assessment.dueAt))}<br>This assessment can be submitted once.</div><div class="p3-question-stack">${questions}</div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-sa-action="close">Cancel</button><button type="submit" class="btn btn-primary">Submit assessment</button></div></form>`);
+  const available = asDate(assessment.availableFrom);
+  if (available && available > new Date()) return toast(`This assessment opens ${fmt(assessment.availableFrom)}.`, 'error');
+  const questions = presentedItems(assessment);
+  const questionMarkup = questions.map((question, index) => `<article class="p3-question"><div class="p3-question-number">${index + 1}</div><div><h4>${esc(question.prompt)}</h4><span class="pill">${Number(question.points || 0)} pts</span>${question.type === 'multiple_choice' ? `<div class="p3-answer-options">${(question.options || []).map((option) => `<label><input type="radio" name="answer__${esc(question.id)}" value="${esc(option)}" required><span>${esc(option)}</span></label>`).join('')}</div>` : question.type === 'true_false' ? `<div class="p3-answer-options"><label><input type="radio" name="answer__${esc(question.id)}" value="true" required><span>True</span></label><label><input type="radio" name="answer__${esc(question.id)}" value="false" required><span>False</span></label></div>` : `<textarea name="answer__${esc(question.id)}" rows="5" required placeholder="Your response"></textarea>`}</div></article>`).join('');
+  openModal(assessment.title, `<form id="sa-attempt-form" data-id="${esc(assessment.id)}"><input type="hidden" name="presentedQuestionIds" value="${esc(questions.map((q) => q.id).join(','))}"><div class="callout info" style="margin-bottom:18px"><strong>${questions.reduce((sum,q)=>sum+Number(q.points||0),0)} displayed points</strong> · Due ${esc(fmt(assessment.dueAt))}<br>This assessment can be submitted once.</div><div class="p3-question-stack">${questionMarkup}</div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-sa-action="close">Cancel</button><button type="submit" class="btn btn-primary">Submit assessment</button></div></form>`);
 }
 
 function showResult(id) {
@@ -118,11 +141,13 @@ document.addEventListener('submit', async (event) => {
   const button = event.target.querySelector('button[type="submit"]'); if (button) { button.disabled = true; button.textContent = 'Submitting…'; }
   try {
     const data = new FormData(event.target), answers = {};
-    (assessment.items || []).forEach((question) => { answers[question.id] = String(data.get(`answer__${question.id}`) ?? '').trim(); });
+    const presentedQuestionIds = String(data.get('presentedQuestionIds') || '').split(',').filter(Boolean);
+    const presented = (assessment.items || []).filter((question) => presentedQuestionIds.includes(question.id));
+    presented.forEach((question) => { answers[question.id] = String(data.get(`answer__${question.id}`) ?? '').trim(); });
     const attemptId = `${assessment.id}_${state.user.uid}`;
     await setDoc(doc(db, 'assessmentAttempts', attemptId), {
       assessmentId: assessment.id, courseId: assessment.courseId, schoolId: assessment.schoolId,
-      studentId: state.user.uid, answers, score: null, pointsPossible: Number(assessment.pointsPossible) || 0,
+      studentId: state.user.uid, answers, presentedQuestionIds, score: null, pointsPossible: presented.reduce((sum,q)=>sum+Number(q.points||0),0),
       itemResults: [], feedback: '', status: 'submitted', submittedAt: serverTimestamp(), createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
     closeModal(); toast('Assessment submitted.', 'success'); await load(); render();
