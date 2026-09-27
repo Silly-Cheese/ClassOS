@@ -13,20 +13,23 @@ function roleText() {
 }
 
 function isTeacherLike() {
-  return ['Teacher', 'School Admin', 'District Admin', 'Platform Owner'].includes(roleText());
+  return ['Teacher', 'Educator', 'School Admin', 'District Admin', 'Platform Owner'].includes(roleText());
 }
 
 function groupNavigation() {
   const nav = $('#primary-nav');
-  if (!nav || nav.dataset.classos2Grouped === 'true') return;
-
+  if (!nav) return;
+  if ($('.nav-section-toggle', nav)) {
+    $$('.classos2-nav-label', nav).forEach((label) => label.remove());
+    nav.dataset.classos2Grouped = 'native';
+    return;
+  }
+  if (nav.dataset.classos2Grouped === 'true') return;
   const buttons = $$('.nav-item', nav);
   if (!buttons.length) return;
-
   const academic = new Set(['dashboard', 'courses', 'assignments', 'gradebook', 'grading', 'attendance', 'calendar', 'people']);
   const communication = new Set(['inbox', 'family', 'absent']);
   const administration = new Set(['organizations', 'platform']);
-
   const classify = (button) => {
     const route = button.dataset.route || button.dataset.p3Route || button.dataset.p4Route || button.dataset.manageRoute || button.dataset.workspaceRoute || '';
     if (academic.has(route) || ['assessments', 'command', 'support'].includes(route)) return 'TEACHING';
@@ -34,7 +37,6 @@ function groupNavigation() {
     if (administration.has(route) || ['district', 'operations', 'manage', 'workspace'].includes(route)) return 'ADMINISTRATION';
     return 'MORE';
   };
-
   let previous = '';
   buttons.forEach((button) => {
     const group = classify(button);
@@ -151,6 +153,12 @@ function makeCourseCardsActionable() {
     card.setAttribute('tabindex', '0');
     card.setAttribute('role', 'group');
     card.classList.add('classos2-course-card');
+    card.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (event.target.closest('button, a, input, select, textarea')) return;
+      event.preventDefault();
+      card.querySelector('[data-lms-action="open-course"]')?.click();
+    });
   });
 }
 
@@ -261,16 +269,7 @@ function enhanceCourseHome() {
   hero.insertAdjacentElement('afterend', toolkit);
 
   const coursework = $('.card', content).find((card) => /Coursework/i.test(card.textContent));
-  if (coursework) {
-    coursework.classList.add('classos2-coursework-card');
-    const list = $('.list', coursework);
-    if (list && !$('.classos2-coursework-label', coursework)) {
-      const label = document.createElement('div');
-      label.className = 'classos2-coursework-label';
-      label.innerHTML = '<strong>Learning plan</strong><span>Assignments are shown in due-date order. Module organization is the next structural upgrade.</span>';
-      list.insertAdjacentElement('beforebegin', label);
-    }
-  }
+  if (coursework) coursework.classList.add('classos2-coursework-card');
 }
 
 function enhanceGradingQueue() {
