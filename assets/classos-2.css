@@ -162,3 +162,104 @@ html.theme-dark .classos2-grade-search {
   .classos2-grade-shortcuts { overflow:auto; flex-wrap:nowrap; padding-bottom:3px; }
   .classos2-page-desc { display:none; }
 }
+
+
+.classos2-list-tools {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin: 12px 0 14px;
+}
+
+.classos2-segmented {
+  display:inline-flex;
+  padding:3px;
+  border:1px solid var(--classos2-border);
+  border-radius:10px;
+  background:var(--classos2-soft);
+}
+
+.classos2-segmented button {
+  border:0;
+  background:transparent;
+  color:var(--muted);
+  padding:7px 10px;
+  border-radius:7px;
+  font:inherit;
+  font-size:.72rem;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.classos2-segmented button.active {
+  background:var(--surface, #fff);
+  color:inherit;
+  box-shadow:0 1px 3px rgba(15,23,42,.08);
+}
+
+.classos2-table-count {
+  font-size:.72rem;
+  color:var(--muted);
+}
+
+.classos2-course-toolkit {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:18px 0 22px;
+}
+
+.classos2-course-toolkit button {
+  appearance:none;
+  border:1px solid var(--classos2-border);
+  border-radius:13px;
+  background:var(--surface, #fff);
+  color:inherit;
+  padding:13px 14px;
+  text-align:left;
+  cursor:pointer;
+  transition:transform .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+
+.classos2-course-toolkit button:hover,
+.classos2-course-toolkit button:focus-visible {
+  transform:translateY(-1px);
+  border-color:rgba(37,99,235,.24);
+  box-shadow:0 8px 20px rgba(15,23,42,.06);
+  outline:none;
+}
+
+.classos2-course-toolkit strong { display:block; font-size:.82rem; margin-bottom:3px; }
+.classos2-course-toolkit span { display:block; font-size:.69rem; color:var(--muted); line-height:1.35; }
+
+.classos2-coursework-label {
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  align-items:flex-end;
+  padding:10px 0 12px;
+  border-bottom:1px solid var(--classos2-border);
+  margin-bottom:2px;
+}
+
+.classos2-coursework-label strong { font-size:.78rem; }
+.classos2-coursework-label span { color:var(--muted); font-size:.68rem; text-align:right; max-width:360px; }
+
+html.theme-dark .classos2-segmented button.active,
+html.theme-dark .classos2-course-toolkit button {
+  background:rgba(15,23,42,.62);
+}
+
+@media (max-width: 900px) {
+  .classos2-course-toolkit { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width: 760px) {
+  .classos2-list-tools { align-items:stretch; flex-direction:column; }
+  .classos2-segmented { overflow:auto; align-self:stretch; }
+  .classos2-segmented button { flex:1; white-space:nowrap; }
+  .classos2-course-toolkit { grid-template-columns:1fr 1fr; }
+  .classos2-coursework-label { align-items:flex-start; flex-direction:column; }
+  .classos2-coursework-label span { text-align:left; }
+}
