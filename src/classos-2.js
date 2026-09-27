@@ -256,6 +256,36 @@ function enhanceCourseHome() {
   }
 }
 
+function enhanceGradingQueue() {
+  if ($('#page-title')?.textContent !== 'Needs Grading') return;
+  const root = $('#page-content');
+  const search = $('#grading-filter', root);
+  const buttons = $('[data-grading-filter]', root);
+  if (!root || !search || search.dataset.bound === 'true') return;
+
+  let status = 'all';
+  const apply = () => {
+    const query = search.value.trim().toLowerCase();
+    $('.grading-queue-row', root).forEach((row) => {
+      const matchesText = !query || row.textContent.toLowerCase().includes(query);
+      const matchesStatus = status === 'all' || row.dataset.gradingStatus === status;
+      row.hidden = !(matchesText && matchesStatus);
+    });
+    $('.grading-course-group', root).forEach((group) => {
+      const visible = $('.grading-queue-row', group).some((row) => !row.hidden);
+      group.hidden = !visible;
+    });
+  };
+
+  search.dataset.bound = 'true';
+  search.addEventListener('input', apply);
+  buttons.forEach((button) => button.addEventListener('click', () => {
+    status = button.dataset.gradingFilter;
+    buttons.forEach((item) => item.classList.toggle('active', item === button));
+    apply();
+  }));
+}
+
 function addPageDescriptor() {
   const topbar = $('.topbar-left > div');
   if (!topbar || $('.classos2-page-desc', topbar)) return;
@@ -283,6 +313,7 @@ function decorate() {
   groupNavigation();
   addTeacherCommandCenter();
   enhanceGradebook();
+  enhanceGradingQueue();
   enhanceAssignments();
   enhancePeople();
   enhanceCourseHome();
