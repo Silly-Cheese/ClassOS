@@ -13,20 +13,23 @@ function roleText() {
 }
 
 function isTeacherLike() {
-  return ['Teacher', 'School Admin', 'District Admin', 'Platform Owner'].includes(roleText());
+  return ['Teacher', 'Educator', 'School Admin', 'District Admin', 'Platform Owner'].includes(roleText());
 }
 
 function groupNavigation() {
   const nav = $('#primary-nav');
-  if (!nav || nav.dataset.classos2Grouped === 'true') return;
-
+  if (!nav) return;
+  if ($('.nav-section-toggle', nav)) {
+    $$('.classos2-nav-label', nav).forEach((label) => label.remove());
+    nav.dataset.classos2Grouped = 'native';
+    return;
+  }
+  if (nav.dataset.classos2Grouped === 'true') return;
   const buttons = $$('.nav-item', nav);
   if (!buttons.length) return;
-
   const academic = new Set(['dashboard', 'courses', 'assignments', 'gradebook', 'grading', 'attendance', 'calendar', 'people']);
   const communication = new Set(['inbox', 'family', 'absent']);
   const administration = new Set(['organizations', 'platform']);
-
   const classify = (button) => {
     const route = button.dataset.route || button.dataset.p3Route || button.dataset.p4Route || button.dataset.manageRoute || button.dataset.workspaceRoute || '';
     if (academic.has(route) || ['assessments', 'command', 'support'].includes(route)) return 'TEACHING';
@@ -34,7 +37,6 @@ function groupNavigation() {
     if (administration.has(route) || ['district', 'operations', 'manage', 'workspace'].includes(route)) return 'ADMINISTRATION';
     return 'MORE';
   };
-
   let previous = '';
   buttons.forEach((button) => {
     const group = classify(button);
@@ -84,7 +86,7 @@ function installQuickActionRouting() {
     const button = event.target.closest('[data-classos2-route]');
     if (!button) return;
     const route = button.dataset.classos2Route;
-    const target = document.querySelector(`#primary-nav [data-route="${route}"]`);
+    const target = document.querySelector(`#primary-nav [data-route="${route}"], #primary-nav [data-p3-route="${route}"]`);
     if (target) target.click();
   });
 }
@@ -151,6 +153,12 @@ function makeCourseCardsActionable() {
     card.setAttribute('tabindex', '0');
     card.setAttribute('role', 'group');
     card.classList.add('classos2-course-card');
+    card.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      if (event.target.closest('button, a, input, select, textarea')) return;
+      event.preventDefault();
+      card.querySelector('[data-lms-action="open-course"]')?.click();
+    });
   });
 }
 
@@ -235,25 +243,33 @@ function enhanceCourseHome() {
 
   const toolkit = document.createElement('section');
   toolkit.className = 'classos2-course-toolkit';
-  toolkit.innerHTML = `
-    <button data-classos2-route="assignments"><strong>Coursework</strong><span>Create, organize, and review assignments</span></button>
-    <button data-classos2-route="gradebook"><strong>Grades</strong><span>Enter scores and review progress</span></button>
-    <button data-classos2-route="attendance"><strong>Attendance</strong><span>Take or review attendance</span></button>
-    <button data-classos2-route="people"><strong>People</strong><span>View students and course members</span></button>
-  `;
+  const role = roleText();
+  if (role === 'Student') {
+    toolkit.innerHTML = `
+      <button data-classos2-route="assignments"><strong>Assignments</strong><span>See upcoming, submitted, and missing work</span></button>
+      <button data-classos2-route="assessments"><strong>Assessments</strong><span>Open quizzes and tests for this course</span></button>
+      <button data-classos2-route="gradebook"><strong>Grades</strong><span>Review scores and course progress</span></button>
+      <button data-classos2-route="calendar"><strong>Calendar</strong><span>See coursework dates and deadlines</span></button>
+    `;
+  } else if (isTeacherLike()) {
+    toolkit.innerHTML = `
+      <button data-classos2-route="assignments"><strong>Coursework</strong><span>Create, organize, and review assignments</span></button>
+      <button data-classos2-route="assessments"><strong>Assessments</strong><span>Build quizzes, tests, and question banks</span></button>
+      <button data-classos2-route="grading"><strong>Needs Grading</strong><span>Clear submitted work efficiently</span></button>
+      <button data-classos2-route="gradebook"><strong>Gradebook</strong><span>Review student grades and progress</span></button>
+    `;
+  } else {
+    toolkit.innerHTML = `
+      <button data-classos2-route="assignments"><strong>Coursework</strong><span>Review assignments and due dates</span></button>
+      <button data-classos2-route="gradebook"><strong>Grades</strong><span>Review academic progress</span></button>
+      <button data-classos2-route="attendance"><strong>Attendance</strong><span>Review attendance records</span></button>
+      <button data-classos2-route="inbox"><strong>Inbox</strong><span>Open course communication</span></button>
+    `;
+  }
   hero.insertAdjacentElement('afterend', toolkit);
 
   const coursework = $('.card', content).find((card) => /Coursework/i.test(card.textContent));
-  if (coursework) {
-    coursework.classList.add('classos2-coursework-card');
-    const list = $('.list', coursework);
-    if (list && !$('.classos2-coursework-label', coursework)) {
-      const label = document.createElement('div');
-      label.className = 'classos2-coursework-label';
-      label.innerHTML = '<strong>Learning plan</strong><span>Assignments are shown in due-date order. Module organization is the next structural upgrade.</span>';
-      list.insertAdjacentElement('beforebegin', label);
-    }
-  }
+  if (coursework) coursework.classList.add('classos2-coursework-card');
 }
 
 function enhanceGradingQueue() {
@@ -288,25 +304,34 @@ function enhanceGradingQueue() {
 
 function addPageDescriptor() {
   const topbar = $('.topbar-left > div');
-  if (!topbar || $('.classos2-page-desc', topbar)) return;
+  if (!topbar) return;
   const page = ($('#page-title')?.textContent || '').trim();
   const descriptions = {
     Home: 'What needs your attention right now',
     Courses: 'Your classes and course spaces',
-    Course: 'Teach, organize, and communicate',
-    Assignments: 'Create, collect, and grade work',
-    Gradebook: 'Fast, spreadsheet-style grading',
+    Course: 'Learning, coursework, and class updates',
+    Assignments: 'Create, collect, and review coursework',
+    Assessments: 'Quizzes, tests, and assessment results',
+    Gradebook: 'Grades and academic progress',
+    Grades: 'Your grades and course progress',
     'Needs Grading': 'One queue for submitted work across your courses',
     Attendance: 'Record and review attendance',
     Calendar: 'Plan coursework and deadlines',
     Inbox: 'Classroom communication',
-    People: 'Students and course members'
+    People: 'Students and course members',
+    'Absent Mode': 'Catch up after an absence'
   };
-  if (!descriptions[page]) return;
-  const p = document.createElement('p');
-  p.className = 'classos2-page-desc';
+  let p = $('.classos2-page-desc', topbar);
+  if (!descriptions[page]) {
+    p?.remove();
+    return;
+  }
+  if (!p) {
+    p = document.createElement('p');
+    p.className = 'classos2-page-desc';
+    topbar.appendChild(p);
+  }
   p.textContent = descriptions[page];
-  topbar.appendChild(p);
 }
 
 function decorate() {

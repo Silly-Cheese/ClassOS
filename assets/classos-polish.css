@@ -472,3 +472,49 @@ html.theme-dark .link-button:hover {
     width: auto;
   }
 }
+
+
+/* Student experience organization */
+.student-course-card {
+  border-color: rgba(37,99,235,.14);
+}
+
+.student-course-card .course-card-stats {
+  grid-template-columns: repeat(3,minmax(0,1fr));
+}
+
+.student-course-card .course-card-stats span {
+  background: var(--surface-2);
+}
+
+.student-course-card .btn-primary {
+  box-shadow: none;
+}
+
+.classos2-course-toolkit {
+  margin-top: 16px;
+}
+
+.classos2-course-toolkit button {
+  min-height: 82px;
+}
+
+.classos2-course-toolkit strong {
+  font-size: .86rem;
+}
+
+.classos2-course-toolkit span {
+  font-size: .71rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+  .student-course-card .course-card-stats {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .student-course-card .course-card-stats span {
+    padding: 8px 6px;
+    text-align: center;
+  }
+}
