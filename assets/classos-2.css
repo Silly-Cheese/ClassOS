@@ -520,3 +520,40 @@ html.theme-dark .assignment-builder-section {
   .rubric-editor-row { grid-template-columns:minmax(0,1fr) 90px; }
   .grading-rubric-row { grid-template-columns:minmax(0,1fr) 84px; }
 }
+
+
+.grading-filter-bar {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  margin: 10px 0 14px;
+}
+
+.module-manager-row .row-actions {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  gap:6px;
+}
+
+.module-manager-row .pill[disabled] {
+  opacity:.38;
+  pointer-events:none;
+}
+
+@media (max-width: 760px) {
+  .grading-filter-bar {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .module-manager-row {
+    grid-template-columns:30px minmax(0,1fr);
+  }
+
+  .module-manager-row .row-actions {
+    grid-column:2;
+    justify-content:flex-start;
+  }
+}
