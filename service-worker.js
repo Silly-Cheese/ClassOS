@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classos-1.0-v18';
+const CACHE_NAME = 'classos-2.0-v19';
 const APP_SHELL = [
   './',
   './index.html',
@@ -10,6 +10,8 @@ const APP_SHELL = [
   './assets/manage.css',
   './assets/onboarding.css',
   './assets/classos-next.css',
+  './assets/classos-2.css',
+  './assets/classos-polish.css',
   './assets/icon.svg',
   './manifest.webmanifest',
   './src/firebase.js',
@@ -18,6 +20,7 @@ const APP_SHELL = [
   './src/onboarding.js',
   './src/navigation.js',
   './src/classos-next.js',
+  './src/classos-2.js',
   './src/workspace.js',
   './src/terms.js',
   './src/course-tools.js',
