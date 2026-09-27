@@ -820,6 +820,12 @@ async function handleAction(event) {
   if (action === 'map-standard') showMapAssignment(target.dataset.standardId);
   if (action === 'map-assignment') showMapAssignment();
   if (action === 'delete-standard') {
+    const item = state.standards.find((standard) => standard.id === target.dataset.standardId);
+    if (!item || !canManageCourse(item.courseId)) return true;
+    const usage = standardUsage(item.id);
+    openModal('Delete standard?', `<div class="callout warning"><strong>${esc(item.code)} — ${esc(item.title)}</strong><br>This standard is connected to ${usage.assignmentCount} assignment${usage.assignmentCount === 1 ? '' : 's'} and ${usage.questionCount} question${usage.questionCount === 1 ? '' : 's'}. Deleting it removes those mappings but does not delete the assignments or questions.</div><div class="modal-actions"><button class="btn btn-secondary" data-p3-action="manage-standards">Cancel</button><button class="btn btn-danger" data-p3-action="confirm-delete-standard" data-standard-id="${esc(item.id)}">Delete standard</button></div>`, 'STANDARDS');
+  }
+  if (action === 'confirm-delete-standard') {
     const standardId = target.dataset.standardId;
     const item = state.standards.find((standard) => standard.id === standardId);
     if (!item || !canManageCourse(item.courseId)) return true;
