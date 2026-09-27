@@ -476,7 +476,7 @@ export function createLms({ state, db, auth, helpers }) {
         const status = assignmentStatus(a, uid());
         return `<tr><td><span class="row-title">${esc(a.title)}</span><span class="row-subtitle">${esc(c?.name || '')}</span></td><td>${esc(a.categoryName || 'Coursework')}</td><td>${formatDate(a.dueAt)}</td><td>${esc(a.pointsPossible)} pts</td><td><button class="pill clickable ${status.cls}" data-lms-action="submit-assignment" data-assignment-id="${esc(a.id)}">${esc(status.label)}</button></td></tr>`;
       }
-      return `<tr><td><span class="row-title">${esc(a.title)}</span><span class="row-subtitle">${esc(c?.name || '')}</span></td><td>${esc(a.categoryName || 'Coursework')}</td><td>${formatDate(a.dueAt)}</td><td>${esc(a.pointsPossible)} pts</td><td><span class="pill ${a.status === 'draft' ? 'warning' : 'success'}">${esc(a.status || 'published')}</span></td>${canManageCourse(c) ? `<td><div class="row-actions"><button class="pill clickable" data-lms-action="edit-assignment" data-assignment-id="${esc(a.id)}">Edit</button><button class="pill clickable info" data-lms-action="grade-assignment" data-assignment-id="${esc(a.id)}">Grade</button></div></td>` : ''}</tr>`;
+      return `<tr><td><span class="row-title">${esc(a.title)}</span><span class="row-subtitle">${esc(c?.name || '')}</span></td><td>${esc(a.categoryName || 'Coursework')}</td><td>${formatDate(a.dueAt)}</td><td>${esc(a.pointsPossible)} pts</td><td><span class="pill ${a.status === 'draft' ? 'warning' : 'success'}">${esc(a.status || 'published')}</span></td>${canManageCourse(c) ? `<td><div class="row-actions"><button class="pill clickable" data-lms-action="edit-assignment" data-assignment-id="${esc(a.id)}">Edit</button><button class="pill clickable" data-lms-action="duplicate-assignment" data-assignment-id="${esc(a.id)}">Duplicate</button><button class="pill clickable ${a.status === 'draft' ? 'success' : ''}" data-lms-action="toggle-assignment-status" data-assignment-id="${esc(a.id)}">${a.status === 'draft' ? 'Publish' : 'Unpublish'}</button><button class="pill clickable info" data-lms-action="grade-assignment" data-assignment-id="${esc(a.id)}">Grade</button></div></td>` : ''}</tr>`;
     }).join('');
     const extraHead = !isStudent() && assignments.some((a) => canManageCourse(course(a.courseId))) ? '<th></th>' : '';
     return `<div class="toolbar"><div><span class="eyebrow">COURSEWORK</span><h2 style="margin:4px 0 0">Assignments</h2></div>${canTeach() ? '<button class="btn btn-primary" data-lms-action="new-assignment">Create assignment</button>' : ''}</div>${rows ? `<div class="table-wrap"><table><thead><tr><th>Assignment</th><th>Category</th><th>Due</th><th>Points</th><th>Status</th>${extraHead}</tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-state"><strong>No assignments yet</strong>Coursework will appear here.</div>'}`;
@@ -496,9 +496,10 @@ export function createLms({ state, db, auth, helpers }) {
     const uniqueStudents = new Set(queue.map((s) => s.studentId)).size;
     return `<div class="toolbar"><div><span class="eyebrow">TEACHER WORKFLOW</span><h2 style="margin:4px 0 0">Needs Grading</h2><p class="metric-note">One queue for submitted assignment work across your courses.</p></div><button class="btn btn-secondary" data-lms-nav="gradebook">Open gradebook</button></div>
       <section class="section grid grid-3">${metric('Waiting', queue.length, 'Submitted assignment items')}${metric('Students', uniqueStudents, 'Learners in the queue')}${metric('Late', late, late ? 'Submitted after the deadline' : 'No late work waiting')}</section>
+      <div class="grading-filter-bar"><div class="classos2-grade-search"><span aria-hidden="true">⌕</span><input type="search" id="grading-filter" placeholder="Find student or assignment…" autocomplete="off"></div><div class="classos2-segmented"><button class="active" data-grading-filter="all">All</button><button data-grading-filter="late">Late</button></div></div>
       <section class="section grading-workspace">${byCourse.length ? byCourse.map((group) => `<article class="card grading-course-group"><div class="section-head"><div><span class="eyebrow">${esc(group.course.courseCode || 'COURSE')}</span><h3>${esc(group.course.name)}</h3></div><span class="pill info">${group.items.length} waiting</span></div><div class="list">${group.items.map((s) => {
         const a = state.assignments.find((item) => item.id === s.assignmentId);
-        return `<div class="list-row grading-queue-row"><div class="list-main"><strong>${esc(personName(s.studentId))}</strong><span>${esc(a?.title || 'Assignment')} · ${s.status === 'late' ? 'Late · ' : ''}${formatDate(s.submittedAt)}</span></div><button class="btn btn-secondary btn-small" data-lms-action="grade-student" data-assignment-id="${esc(s.assignmentId)}" data-student-id="${esc(s.studentId)}">Grade</button></div>`;
+        return `<div class="list-row grading-queue-row" data-grading-status="${esc(s.status)}"><div class="list-main"><strong>${esc(personName(s.studentId))}</strong><span>${esc(a?.title || 'Assignment')} · ${s.status === 'late' ? 'Late · ' : ''}${formatDate(s.submittedAt)}</span></div><button class="btn btn-secondary btn-small" data-lms-action="grade-student" data-assignment-id="${esc(s.assignmentId)}" data-student-id="${esc(s.studentId)}">Grade</button></div>`;
       }).join('')}</div></article>`).join('') : '<div class="empty-state"><strong>Queue clear</strong>No submitted assignment work is waiting for a grade.</div>'}</section>`;
   }
 
@@ -707,7 +708,7 @@ export function createLms({ state, db, auth, helpers }) {
   function showModuleManager(c) {
     if (!c || !canManageCourse(c)) return;
     const modules = courseModules(c);
-    const rows = modules.map((m, index) => `<div class="module-manager-row"><div class="module-manager-order">${index + 1}</div><div class="module-manager-main"><strong>${esc(m.title)}</strong><span>${esc(m.description || 'No description')}${m.published ? '' : ' · Draft'}</span></div><button type="button" class="pill clickable danger" data-lms-action="delete-module" data-course-id="${esc(c.id)}" data-module-id="${esc(m.id)}">Remove</button></div>`).join('');
+    const rows = modules.map((m, index) => `<div class="module-manager-row"><div class="module-manager-order">${index + 1}</div><div class="module-manager-main"><strong>${esc(m.title)}</strong><span>${esc(m.description || 'No description')}${m.published ? '' : ' · Draft'}</span></div><div class="row-actions"><button type="button" class="pill clickable" data-lms-action="move-module" data-course-id="${esc(c.id)}" data-module-id="${esc(m.id)}" data-direction="up" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" class="pill clickable" data-lms-action="move-module" data-course-id="${esc(c.id)}" data-module-id="${esc(m.id)}" data-direction="down" ${index === modules.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="pill clickable ${m.published ? '' : 'success'}" data-lms-action="toggle-module" data-course-id="${esc(c.id)}" data-module-id="${esc(m.id)}">${m.published ? 'Unpublish' : 'Publish'}</button><button type="button" class="pill clickable danger" data-lms-action="delete-module" data-course-id="${esc(c.id)}" data-module-id="${esc(m.id)}">Remove</button></div></div>`).join('');
     openModal(`Modules · ${c.name}`, `<div class="callout info" style="margin-bottom:16px"><strong>Modules create the learning sequence.</strong> Assignments can be placed into a module when they are created.</div>
       <div class="module-manager-list">${rows || '<div class="empty-state"><strong>No modules yet</strong>Create the first learning module below.</div>'}</div>
       <form id="lms-module-form"><input type="hidden" name="courseId" value="${esc(c.id)}"><div class="assignment-builder-section"><div class="assignment-builder-heading"><span>+</span><div><strong>Add module</strong><small>Build the next part of the course sequence</small></div></div><div class="form-grid"><div class="field span-2"><label>Module title</label><input name="title" required maxlength="100" placeholder="Unit 1 — Foundations"></div><div class="field span-2"><label>Description</label><textarea name="description" rows="3" placeholder="What students will learn in this module"></textarea></div><div class="field"><label>Visibility</label><select name="published"><option value="yes">Published</option><option value="no">Draft</option></select></div></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Close</button><button class="btn btn-primary">Add module</button></div></form>`, 'COURSE MODULES');
@@ -934,6 +935,52 @@ export function createLms({ state, db, auth, helpers }) {
     if (action === 'open-message') showMessage(target.dataset.messageId);
     if (action === 'link-guardian') showGuardianLink();
     if (action === 'student-grade-detail') showStudentGradeDetail(target.dataset.courseId, target.dataset.studentId);
+    if (action === 'move-module') {
+      const c = course(target.dataset.courseId);
+      if (!c || !canManageCourse(c)) return true;
+      const modules = courseModules(c);
+      const index = modules.findIndex((m) => m.id === target.dataset.moduleId);
+      const nextIndex = target.dataset.direction === 'up' ? index - 1 : index + 1;
+      if (index < 0 || nextIndex < 0 || nextIndex >= modules.length) return true;
+      [modules[index], modules[nextIndex]] = [modules[nextIndex], modules[index]];
+      const next = modules.map((m, i) => ({ ...m, position: i }));
+      await updateDoc(doc(db, 'courses', c.id), { modules: next, updatedAt: serverTimestamp() });
+      c.modules = next;
+      await logAction('course.module_reorder', 'course', c.id, { moduleId: target.dataset.moduleId, direction: target.dataset.direction });
+      showModuleManager(c);
+    }
+    if (action === 'toggle-module') {
+      const c = course(target.dataset.courseId);
+      if (!c || !canManageCourse(c)) return true;
+      const next = courseModules(c).map((m) => m.id === target.dataset.moduleId ? { ...m, published: !m.published } : m);
+      await updateDoc(doc(db, 'courses', c.id), { modules: next, updatedAt: serverTimestamp() });
+      c.modules = next;
+      await logAction('course.module_visibility', 'course', c.id, { moduleId: target.dataset.moduleId });
+      showModuleManager(c);
+    }
+    if (action === 'duplicate-assignment') {
+      const a = state.assignments.find((item) => item.id === target.dataset.assignmentId);
+      const c = course(a?.courseId);
+      if (!a || !c || !canManageCourse(c)) return true;
+      const clone = { ...a };
+      delete clone.id;
+      delete clone.createdAt;
+      delete clone.updatedAt;
+      const ref = await addDoc(collection(db, 'assignments'), { ...clone, title: `${a.title} (Copy)`, status: 'draft', createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      await logAction('assignment.duplicate', 'assignment', ref.id, { sourceAssignmentId: a.id, courseId: c.id });
+      toast('Assignment duplicated as a draft.', 'success');
+      await navigate('assignments');
+    }
+    if (action === 'toggle-assignment-status') {
+      const a = state.assignments.find((item) => item.id === target.dataset.assignmentId);
+      const c = course(a?.courseId);
+      if (!a || !c || !canManageCourse(c)) return true;
+      const status = a.status === 'draft' ? 'published' : 'draft';
+      await updateDoc(doc(db, 'assignments', a.id), { status, updatedAt: serverTimestamp() });
+      await logAction('assignment.status', 'assignment', a.id, { status });
+      toast(status === 'published' ? 'Assignment published.' : 'Assignment moved to drafts.', 'success');
+      await navigate('assignments');
+    }
     if (action === 'delete-module') {
       const c = course(target.dataset.courseId);
       if (!c || !canManageCourse(c)) return true;
@@ -966,11 +1013,6 @@ export function createLms({ state, db, auth, helpers }) {
       const c = course(a?.courseId);
       if (!a || !canManageCourse(c)) return true;
       const id = `${a.id}_${target.dataset.studentId}`;
-      const rubricScores = {};
-      (Array.isArray(a.rubric) ? a.rubric : []).forEach((criterion) => {
-        const value = Number(data[`rubric__${criterion.id}`]);
-        if (Number.isFinite(value)) rubricScores[criterion.id] = Math.max(0, Math.min(Number(criterion.points || 0), value));
-      });
       await setDoc(doc(db, 'submissions', id), {
         assignmentId: a.id, courseId: a.courseId, schoolId: a.schoolId,
         studentId: target.dataset.studentId, studentName: personName(target.dataset.studentId, 'Student'),
@@ -1082,6 +1124,11 @@ export function createLms({ state, db, auth, helpers }) {
       if (!Number.isFinite(score) || score < 0 || score > Number(a.pointsPossible)) throw new Error('Enter a score within the assignment point range.');
       const id = `${a.id}_${data.studentId}`;
       const existing = studentSubmission(a.id, data.studentId);
+      const rubricScores = {};
+      (Array.isArray(a.rubric) ? a.rubric : []).forEach((criterion) => {
+        const value = Number(data[`rubric__${criterion.id}`]);
+        if (Number.isFinite(value)) rubricScores[criterion.id] = Math.max(0, Math.min(Number(criterion.points || 0), value));
+      });
       await setDoc(doc(db, 'submissions', id), {
         assignmentId: a.id, courseId: a.courseId, schoolId: a.schoolId,
         studentId: data.studentId, studentName: personName(data.studentId, 'Student'),
