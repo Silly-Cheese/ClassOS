@@ -476,10 +476,30 @@ export function createLms({ state, db, auth, helpers }) {
         const status = assignmentStatus(a, uid());
         return `<tr><td><span class="row-title">${esc(a.title)}</span><span class="row-subtitle">${esc(c?.name || '')}</span></td><td>${esc(a.categoryName || 'Coursework')}</td><td>${formatDate(a.dueAt)}</td><td>${esc(a.pointsPossible)} pts</td><td><button class="pill clickable ${status.cls}" data-lms-action="submit-assignment" data-assignment-id="${esc(a.id)}">${esc(status.label)}</button></td></tr>`;
       }
-      return `<tr><td><span class="row-title">${esc(a.title)}</span><span class="row-subtitle">${esc(c?.name || '')}</span></td><td>${esc(a.categoryName || 'Coursework')}</td><td>${formatDate(a.dueAt)}</td><td>${esc(a.pointsPossible)} pts</td><td><span class="pill ${a.status === 'draft' ? 'warning' : 'success'}">${esc(a.status || 'published')}</span></td>${canManageCourse(c) ? `<td><button class="pill clickable info" data-lms-action="grade-assignment" data-assignment-id="${esc(a.id)}">Grade</button></td>` : ''}</tr>`;
+      return `<tr><td><span class="row-title">${esc(a.title)}</span><span class="row-subtitle">${esc(c?.name || '')}</span></td><td>${esc(a.categoryName || 'Coursework')}</td><td>${formatDate(a.dueAt)}</td><td>${esc(a.pointsPossible)} pts</td><td><span class="pill ${a.status === 'draft' ? 'warning' : 'success'}">${esc(a.status || 'published')}</span></td>${canManageCourse(c) ? `<td><div class="row-actions"><button class="pill clickable" data-lms-action="edit-assignment" data-assignment-id="${esc(a.id)}">Edit</button><button class="pill clickable info" data-lms-action="grade-assignment" data-assignment-id="${esc(a.id)}">Grade</button></div></td>` : ''}</tr>`;
     }).join('');
     const extraHead = !isStudent() && assignments.some((a) => canManageCourse(course(a.courseId))) ? '<th></th>' : '';
     return `<div class="toolbar"><div><span class="eyebrow">COURSEWORK</span><h2 style="margin:4px 0 0">Assignments</h2></div>${canTeach() ? '<button class="btn btn-primary" data-lms-action="new-assignment">Create assignment</button>' : ''}</div>${rows ? `<div class="table-wrap"><table><thead><tr><th>Assignment</th><th>Category</th><th>Due</th><th>Points</th><th>Status</th>${extraHead}</tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-state"><strong>No assignments yet</strong>Coursework will appear here.</div>'}`;
+  }
+
+  function gradingView() {
+    if (!canTeach()) return '<div class="empty-state"><strong>Grading unavailable</strong>Your role does not include grading access.</div>';
+    const courses = visibleCourses().filter((item) => canManageCourse(item));
+    const queue = state.submissions
+      .filter((s) => courses.some((c) => c.id === s.courseId) && ['submitted', 'late'].includes(s.status))
+      .sort((a, b) => (asDate(a.submittedAt)?.getTime() || 0) - (asDate(b.submittedAt)?.getTime() || 0));
+    const byCourse = courses.map((c) => ({
+      course: c,
+      items: queue.filter((s) => s.courseId === c.id)
+    })).filter((group) => group.items.length);
+    const late = queue.filter((s) => s.status === 'late').length;
+    const uniqueStudents = new Set(queue.map((s) => s.studentId)).size;
+    return `<div class="toolbar"><div><span class="eyebrow">TEACHER WORKFLOW</span><h2 style="margin:4px 0 0">Needs Grading</h2><p class="metric-note">One queue for submitted assignment work across your courses.</p></div><button class="btn btn-secondary" data-lms-nav="gradebook">Open gradebook</button></div>
+      <section class="section grid grid-3">${metric('Waiting', queue.length, 'Submitted assignment items')}${metric('Students', uniqueStudents, 'Learners in the queue')}${metric('Late', late, late ? 'Submitted after the deadline' : 'No late work waiting')}</section>
+      <section class="section grading-workspace">${byCourse.length ? byCourse.map((group) => `<article class="card grading-course-group"><div class="section-head"><div><span class="eyebrow">${esc(group.course.courseCode || 'COURSE')}</span><h3>${esc(group.course.name)}</h3></div><span class="pill info">${group.items.length} waiting</span></div><div class="list">${group.items.map((s) => {
+        const a = state.assignments.find((item) => item.id === s.assignmentId);
+        return `<div class="list-row grading-queue-row"><div class="list-main"><strong>${esc(personName(s.studentId))}</strong><span>${esc(a?.title || 'Assignment')} · ${s.status === 'late' ? 'Late · ' : ''}${formatDate(s.submittedAt)}</span></div><button class="btn btn-secondary btn-small" data-lms-action="grade-student" data-assignment-id="${esc(s.assignmentId)}" data-student-id="${esc(s.studentId)}">Grade</button></div>`;
+      }).join('')}</div></article>`).join('') : '<div class="empty-state"><strong>Queue clear</strong>No submitted assignment work is waiting for a grade.</div>'}</section>`;
   }
 
   function gradebook() {
@@ -592,7 +612,7 @@ export function createLms({ state, db, auth, helpers }) {
   }
 
   function peopleView() {
-    if (!isSupport()) return '<div class="empty-state"><strong>Directory restricted</strong>Your role does not include school-directory access.</div>';
+    if (!isSupport() && !isTeacher()) return '<div class="empty-state"><strong>Directory restricted</strong>Your role does not include school-directory access.</div>';
     const people = isOwner() ? (state.users || []) : state.lmsUsers;
     const rows = people.map((u) => `<tr><td><span class="row-title">${esc(u.displayName || 'Unnamed')}</span><span class="row-subtitle">${esc(u.email || '')}</span></td><td>${esc(roleName(u.role))}</td><td><span class="pill ${u.status === 'active' ? 'success' : 'warning'}">${esc(u.status || 'pending')}</span></td><td>${esc((u.schoolIds || []).map((id) => state.schools.find((s) => s.id === id)?.name).filter(Boolean).join(', ') || '—')}</td><td>${u.role === 'student' ? `<button class="pill clickable info" data-lms-action="student-workspace" data-student-id="${esc(u.id)}">Open student</button>` : ''}</td></tr>`).join('');
     return `<div class="toolbar"><div><span class="eyebrow">DIRECTORY</span><h2 style="margin:4px 0 0">People & access</h2></div><div class="toolbar-group">${isOwner() ? '<button class="btn btn-secondary" data-action="invite">Pre-register user</button>' : ''}${isAdmin() ? '<button class="btn btn-primary" data-lms-action="link-guardian">Link guardian</button>' : ''}</div></div><section class="card">${rows ? `<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>School</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-state">No people are available in this directory.</div>'}</section>`;
@@ -604,6 +624,7 @@ export function createLms({ state, db, auth, helpers }) {
     if (!ACTIVE_ROLES.includes(r)) return ['dashboard', 'settings'].includes(routeName);
     if (['organizations', 'platform'].includes(routeName)) return isOwner();
     if (routeName === 'people') return isSupport() || isTeacher();
+    if (routeName === 'grading') return canTeach();
     if (routeName === 'absent') return isStudent();
     if (routeName === 'family') return isGuardian();
     if (routeName === 'attendance') return ['platform_owner', 'district_admin', 'school_admin', 'counselor', 'teacher', 'guardian', 'student'].includes(r);
@@ -618,6 +639,7 @@ export function createLms({ state, db, auth, helpers }) {
     const additions = [
       ['assignments', '✓', 'Assignments'],
       ['gradebook', '▦', 'Gradebook'],
+      ['grading', '✓', 'Needs Grading'],
       ['calendar', '□', 'Calendar'],
       ['attendance', '◉', 'Attendance'],
       ['inbox', '✉', 'Inbox'],
@@ -671,6 +693,12 @@ export function createLms({ state, db, auth, helpers }) {
             <div class="field"><label>Late submissions</label><select name="allowLateSubmissions"><option value="yes">Allow after due date</option><option value="no">Close at due date</option></select></div>
           </div>
         </div>
+        <div class="assignment-builder-section">
+          <div class="assignment-builder-heading"><span>4</span><div><strong>Rubric</strong><small>Optional criteria for faster, more consistent grading</small></div></div>
+          <div class="rubric-editor">
+            <div class="rubric-editor-row"><input name="rubricName_0" placeholder="Criterion"><input name="rubricPoints_0" type="number" min="0" step=".5" placeholder="Points"></div><div class="rubric-editor-row"><input name="rubricName_1" placeholder="Criterion"><input name="rubricPoints_1" type="number" min="0" step=".5" placeholder="Points"></div><div class="rubric-editor-row"><input name="rubricName_2" placeholder="Criterion"><input name="rubricPoints_2" type="number" min="0" step=".5" placeholder="Points"></div><div class="rubric-editor-row"><input name="rubricName_3" placeholder="Criterion"><input name="rubricPoints_3" type="number" min="0" step=".5" placeholder="Points"></div>
+          </div>
+        </div>
       </div>
       <div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Create assignment</button></div>
     </form>`, 'COURSEWORK');
@@ -707,6 +735,39 @@ export function createLms({ state, db, auth, helpers }) {
       <div class="student-workspace-section"><div class="section-head"><div><span class="eyebrow">COURSES</span><h4>Current academic picture</h4></div></div>${courseRows || '<div class="empty-state">This student is not enrolled in a visible course.</div>'}</div>`, 'STUDENT');
   }
 
+  function showEditAssignmentForm(assignmentId) {
+    const a = state.assignments.find((item) => item.id === assignmentId);
+    const c = course(a?.courseId);
+    if (!a || !c || !canManageCourse(c)) return toast('You cannot edit that assignment.', 'error');
+    const categories = courseCategories(c);
+    const modules = courseModules(c);
+    const rubric = Array.isArray(a.rubric) ? a.rubric : [];
+    openModal('Edit assignment', `<form id="lms-assignment-edit-form">
+      <input type="hidden" name="assignmentId" value="${esc(a.id)}">
+      <div class="assignment-builder">
+        <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>1</span><div><strong>Assignment details</strong><small>Update what students see</small></div></div><div class="form-grid">
+          <div class="field span-2"><label>Title</label><input name="title" value="${esc(a.title)}" required maxlength="120"></div>
+          <div class="field span-2"><label>Instructions</label><textarea name="instructions" rows="6">${esc(a.instructions || '')}</textarea></div>
+          <div class="field"><label>Module</label><select name="moduleId"><option value="">No module</option>${modules.map((m) => `<option value="${esc(m.id)}" ${a.moduleId === m.id ? 'selected' : ''}>${esc(m.title)}</option>`).join('')}</select></div>
+          <div class="field"><label>Category</label><select name="categoryId">${categories.map((cat) => `<option value="${esc(cat.id)}" ${a.categoryId === cat.id ? 'selected' : ''}>${esc(cat.name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Points</label><input name="pointsPossible" type="number" min="0" step=".01" value="${esc(a.pointsPossible)}" required></div>
+          <div class="field"><label>Status</label><select name="status"><option value="published" ${a.status !== 'draft' ? 'selected' : ''}>Published</option><option value="draft" ${a.status === 'draft' ? 'selected' : ''}>Draft</option></select></div>
+        </div></div>
+        <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>2</span><div><strong>Schedule</strong><small>Availability and deadline</small></div></div><div class="form-grid">
+          <div class="field"><label>Available from</label><input name="availableFrom" type="datetime-local" value="${esc(dateTimeInput(a.availableFrom))}"></div>
+          <div class="field"><label>Due</label><input name="dueAt" type="datetime-local" value="${esc(dateTimeInput(a.dueAt))}" required></div>
+          <div class="field"><label>Late submissions</label><select name="allowLateSubmissions"><option value="yes" ${a.allowLateSubmissions !== false ? 'selected' : ''}>Allow</option><option value="no" ${a.allowLateSubmissions === false ? 'selected' : ''}>Close at due date</option></select></div>
+        </div></div>
+        <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>3</span><div><strong>Rubric</strong><small>Optional criteria used during grading</small></div></div>
+          <div class="rubric-editor">
+            ${[0,1,2,3].map((i) => `<div class="rubric-editor-row"><input name="rubricName_${i}" value="${esc(rubric[i]?.name || '')}" placeholder="Criterion"><input name="rubricPoints_${i}" type="number" min="0" step=".5" value="${esc(rubric[i]?.points ?? '')}" placeholder="Points"></div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Save assignment</button></div>
+    </form>`, 'COURSEWORK');
+  }
+
   function showSubmissionForm(assignmentId) {
     const a = state.assignments.find((x) => x.id === assignmentId);
     if (!a || !isStudent()) return;
@@ -737,7 +798,10 @@ export function createLms({ state, db, auth, helpers }) {
     const c = course(a?.courseId);
     if (!a || !canManageCourse(c)) return;
     const s = studentSubmission(a.id, studentId);
-    openModal(`Grade ${personName(studentId, 'Student')}`, `<div class="assignment-brief"><span class="pill">${esc(a.title)}</span><p>${esc(s?.responseText || 'No text response submitted.')}</p>${s?.linkUrl ? `<p><a href="${esc(s.linkUrl)}" target="_blank" rel="noopener">Open submitted link ↗</a></p>` : ''}</div><form id="lms-grade-form"><input type="hidden" name="assignmentId" value="${esc(a.id)}"><input type="hidden" name="studentId" value="${esc(studentId)}"><div class="form-grid"><div class="field"><label>Score</label><input name="score" type="number" min="0" max="${esc(a.pointsPossible)}" step="0.01" value="${esc(s?.score ?? '')}" required></div><div class="field"><label>Out of</label><input value="${esc(a.pointsPossible)}" disabled></div><div class="field span-2"><label>Feedback</label><textarea name="feedback" rows="5" placeholder="Feedback for the student">${esc(s?.feedback || '')}</textarea></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Save grade</button></div></form>`, 'GRADE');
+    const rubric = Array.isArray(a.rubric) ? a.rubric : [];
+    const rubricScores = s?.rubricScores || {};
+    const rubricMarkup = rubric.length ? `<div class="grading-rubric"><div class="section-head"><div><span class="eyebrow">RUBRIC</span><h4>Criteria</h4></div><button type="button" class="link-button" data-lms-action="rubric-total">Use rubric total</button></div>${rubric.map((criterion) => `<div class="grading-rubric-row"><div><strong>${esc(criterion.name)}</strong><span>Up to ${Number(criterion.points || 0)} points</span></div><input class="control" name="rubric__${esc(criterion.id)}" data-rubric-max="${Number(criterion.points || 0)}" type="number" min="0" max="${Number(criterion.points || 0)}" step=".5" value="${esc(rubricScores[criterion.id] ?? '')}"></div>`).join('')}</div>` : '';
+    openModal(`Grade ${personName(studentId, 'Student')}`, `<div class="assignment-brief"><span class="pill">${esc(a.title)}</span><p>${esc(s?.responseText || 'No text response submitted.')}</p>${s?.linkUrl ? `<p><a href="${esc(s.linkUrl)}" target="_blank" rel="noopener">Open submitted link ↗</a></p>` : ''}</div><form id="lms-grade-form"><input type="hidden" name="assignmentId" value="${esc(a.id)}"><input type="hidden" name="studentId" value="${esc(studentId)}">${rubricMarkup}<div class="form-grid"><div class="field"><label>Score</label><input id="lms-grade-score" name="score" type="number" min="0" max="${esc(a.pointsPossible)}" step="0.01" value="${esc(s?.score ?? '')}" required></div><div class="field"><label>Out of</label><input value="${esc(a.pointsPossible)}" disabled></div><div class="field span-2"><label>Feedback</label><textarea name="feedback" rows="5" placeholder="Feedback for the student">${esc(s?.feedback || '')}</textarea></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Save grade</button></div></form>`, 'GRADE');
   }
 
   function showAttendanceForm(courseId) {
@@ -849,11 +913,18 @@ export function createLms({ state, db, auth, helpers }) {
       navigate('course');
     }
     if (action === 'new-assignment') showAssignmentForm(target.dataset.courseId || null);
+    if (action === 'edit-assignment') showEditAssignmentForm(target.dataset.assignmentId);
     if (action === 'manage-modules') showModuleManager(course(target.dataset.courseId));
     if (action === 'student-workspace') showStudentWorkspace(target.dataset.studentId);
     if (action === 'submit-assignment') showSubmissionForm(target.dataset.assignmentId);
     if (action === 'grade-assignment') showGradeQueue(target.dataset.assignmentId);
     if (action === 'grade-student') showGradeForm(target.dataset.assignmentId, target.dataset.studentId);
+    if (action === 'rubric-total') {
+      const inputs = [...document.querySelectorAll('[name^="rubric__"]')];
+      const score = inputs.reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+      const field = document.querySelector('#lms-grade-score');
+      if (field) field.value = String(score);
+    }
     if (action === 'take-attendance') showAttendanceForm(target.dataset.courseId);
     if (action === 'manage-roster') showRoster(course(target.dataset.courseId));
     if (action === 'new-announcement') showAnnouncementForm(target.dataset.courseId);
@@ -895,6 +966,11 @@ export function createLms({ state, db, auth, helpers }) {
       const c = course(a?.courseId);
       if (!a || !canManageCourse(c)) return true;
       const id = `${a.id}_${target.dataset.studentId}`;
+      const rubricScores = {};
+      (Array.isArray(a.rubric) ? a.rubric : []).forEach((criterion) => {
+        const value = Number(data[`rubric__${criterion.id}`]);
+        if (Number.isFinite(value)) rubricScores[criterion.id] = Math.max(0, Math.min(Number(criterion.points || 0), value));
+      });
       await setDoc(doc(db, 'submissions', id), {
         assignmentId: a.id, courseId: a.courseId, schoolId: a.schoolId,
         studentId: target.dataset.studentId, studentName: personName(target.dataset.studentId, 'Student'),
@@ -920,17 +996,46 @@ export function createLms({ state, db, auth, helpers }) {
       const cat = categories.find((x) => x.id === data.categoryId) || categories[0];
       const due = new Date(data.dueAt);
       if (Number.isNaN(due.getTime())) throw new Error('Choose a valid due date.');
+      const rubric = [0,1,2,3].map((i) => {
+        const name = String(data[`rubricName_${i}`] || '').trim();
+        const points = Number(data[`rubricPoints_${i}`]);
+        return name && Number.isFinite(points) && points >= 0 ? { id: `criterion-${i+1}`, name, points } : null;
+      }).filter(Boolean);
       const ref = await addDoc(collection(db, 'assignments'), {
         organizationId: c.organizationId || '', schoolId: c.schoolId, courseId: c.id,
         title: data.title.trim(), instructions: data.instructions.trim(),
         categoryId: cat.id, categoryName: cat.name, pointsPossible: Number(data.pointsPossible) || 0,
         moduleId: data.moduleId || '', availableFrom: data.availableFrom ? Timestamp.fromDate(new Date(data.availableFrom)) : null,
         dueAt: Timestamp.fromDate(due), status: data.status, submissionType: data.submissionType,
-        allowLateSubmissions: data.allowLateSubmissions !== 'no',
+        allowLateSubmissions: data.allowLateSubmissions !== 'no', rubric,
         createdBy: uid(), teacherIds: c.teacherIds || [], createdAt: serverTimestamp(), updatedAt: serverTimestamp()
       });
       await logAction('assignment.create', 'assignment', ref.id, { courseId: c.id, title: data.title.trim() });
       closeModal(); toast('Assignment created.', 'success'); await navigate('assignments');
+    }
+
+    if (form.id === 'lms-assignment-edit-form') {
+      const a = state.assignments.find((item) => item.id === data.assignmentId);
+      const c = course(a?.courseId);
+      if (!a || !c || !canManageCourse(c)) throw new Error('You cannot edit that assignment.');
+      const cat = courseCategories(c).find((item) => item.id === data.categoryId) || courseCategories(c)[0];
+      const due = new Date(data.dueAt);
+      if (Number.isNaN(due.getTime())) throw new Error('Choose a valid due date.');
+      const rubric = [0,1,2,3].map((i) => {
+        const name = String(data[`rubricName_${i}`] || '').trim();
+        const points = Number(data[`rubricPoints_${i}`]);
+        return name && Number.isFinite(points) && points >= 0 ? { id: `criterion-${i+1}`, name, points } : null;
+      }).filter(Boolean);
+      await updateDoc(doc(db, 'assignments', a.id), {
+        title: data.title.trim(), instructions: data.instructions.trim(), moduleId: data.moduleId || '',
+        categoryId: cat.id, categoryName: cat.name, pointsPossible: Number(data.pointsPossible) || 0,
+        availableFrom: data.availableFrom ? Timestamp.fromDate(new Date(data.availableFrom)) : null,
+        dueAt: Timestamp.fromDate(due), status: data.status, allowLateSubmissions: data.allowLateSubmissions !== 'no',
+        rubric, updatedAt: serverTimestamp()
+      });
+      await logAction('assignment.update', 'assignment', a.id, { courseId: c.id, title: data.title.trim() });
+      closeModal(); toast('Assignment updated.', 'success'); await navigate('assignments');
+      return true;
     }
 
     if (form.id === 'lms-module-form') {
@@ -981,7 +1086,7 @@ export function createLms({ state, db, auth, helpers }) {
         assignmentId: a.id, courseId: a.courseId, schoolId: a.schoolId,
         studentId: data.studentId, studentName: personName(data.studentId, 'Student'),
         responseText: existing?.responseText || '', linkUrl: existing?.linkUrl || '',
-        submittedAt: existing?.submittedAt || null, score, feedback: data.feedback.trim(),
+        submittedAt: existing?.submittedAt || null, score, feedback: data.feedback.trim(), rubricScores,
         status: 'graded', gradedAt: serverTimestamp(), gradedBy: uid(), updatedAt: serverTimestamp(),
         ...(existing ? {} : { createdAt: serverTimestamp() })
       }, { merge: true });
@@ -1078,6 +1183,7 @@ export function createLms({ state, db, auth, helpers }) {
     course: courseView,
     assignments: assignmentsView,
     gradebook,
+    grading: gradingView,
     attendance: attendanceView,
     calendar: calendarView,
     inbox,

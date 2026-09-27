@@ -572,17 +572,56 @@ function showQuestionForm() {
   openModal('Add question', `<form id="p3-question-form"><div class="form-grid"><div class="field"><label>Type</label><select name="type"><option value="multiple_choice">Multiple choice</option><option value="true_false">True / False</option><option value="short_answer">Short answer</option></select></div><div class="field"><label>Points</label><input name="points" type="number" min="1" step="0.5" value="1" required></div><div class="field span-2"><label>Prompt</label><textarea name="prompt" rows="4" required></textarea></div><div class="field span-2"><label>Options</label><textarea name="options" rows="4" placeholder="For multiple choice, put one option per line. For true/false, leave blank."></textarea></div><div class="field"><label>Correct answer</label><input name="correctAnswer" placeholder="Exact option text or true/false"></div><div class="field"><label>Standard</label><select name="standardId"><option value="">No standard</option>${standards.map((item) => `<option value="${esc(item.id)}">${esc(item.code)} — ${esc(item.title)}</option>`).join('')}</select></div></div><div class="callout info"><strong>Answer-key protection:</strong> the correct answer stays in the teacher-only question bank. Published student assessments receive a safe question snapshot without the answer.</div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Save question</button></div></form>`, 'QUESTION BANK');
 }
 
+function shuffled(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function presentedAssessmentItems(item) {
+  let items = [...(item.items || [])];
+  const count = Number(item.randomQuestionCount || 0);
+  if (count > 0 && count < items.length) items = shuffled(items).slice(0, count);
+  else if (item.shuffleQuestions) items = shuffled(items);
+  if (item.shuffleAnswers) {
+    items = items.map((q) => q.type === 'multiple_choice' ? { ...q, options: shuffled(q.options || []) } : q);
+  }
+  return items;
+}
+
 function showAssessmentForm() {
   const questions = questionsForSelected();
   if (!questions.length) return toast('Add at least one question first.', 'error');
-  openModal('Create assessment', `<form id="p3-assessment-form"><div class="form-grid"><div class="field span-2"><label>Title</label><input name="title" required></div><div class="field span-2"><label>Description</label><textarea name="description" rows="3"></textarea></div><div class="field"><label>Due date</label><input name="dueAt" type="datetime-local"></div><div class="field"><label>Status</label><select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></div></div><div class="field"><label>Questions</label><div class="p3-check-list">${questions.map((item) => `<label><input type="checkbox" name="questionId" value="${esc(item.id)}"><span><strong>${esc(item.prompt)}</strong><small>${esc(item.type.replaceAll('_',' '))} · ${Number(item.points || 0)} pts</small></span></label>`).join('')}</div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Create assessment</button></div></form>`, 'ASSESSMENT ENGINE');
+  openModal('Create assessment', `<form id="p3-assessment-form"><div class="assignment-builder">
+    <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>1</span><div><strong>Assessment details</strong><small>Name, description, and availability</small></div></div><div class="form-grid">
+      <div class="field span-2"><label>Title</label><input name="title" required></div>
+      <div class="field span-2"><label>Description</label><textarea name="description" rows="3"></textarea></div>
+      <div class="field"><label>Available from</label><input name="availableFrom" type="datetime-local"></div>
+      <div class="field"><label>Due date</label><input name="dueAt" type="datetime-local"></div>
+      <div class="field"><label>Status</label><select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></div>
+    </div></div>
+    <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>2</span><div><strong>Question pool</strong><small>Select reusable questions from the course bank</small></div></div>
+      <div class="p3-check-list">${questions.map((item) => `<label><input type="checkbox" name="questionId" value="${esc(item.id)}"><span><strong>${esc(item.prompt)}</strong><small>${esc(item.type.replaceAll('_',' '))} · ${Number(item.points || 0)} pts</small></span></label>`).join('')}</div>
+    </div>
+    <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>3</span><div><strong>Delivery settings</strong><small>Control how each student sees the assessment</small></div></div><div class="form-grid">
+      <div class="field"><label>Questions per attempt</label><input name="randomQuestionCount" type="number" min="0" step="1" value="0"><small>0 uses every selected question.</small></div>
+      <div class="field"><label>Question order</label><select name="shuffleQuestions"><option value="no">Keep selected order</option><option value="yes">Shuffle for each attempt</option></select></div>
+      <div class="field"><label>Answer choices</label><select name="shuffleAnswers"><option value="no">Keep option order</option><option value="yes">Shuffle multiple-choice options</option></select></div>
+    </div></div>
+  </div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Create assessment</button></div></form>`, 'ASSESSMENT ENGINE');
 }
 
 function showTakeAssessment(id) {
   const item = assessment(id);
   if (!item || item.status !== 'published') return toast('That assessment is not available.', 'error');
+  const available = asDate(item.availableFrom);
+  if (available && available > new Date()) return toast(`This assessment opens ${formatDate(item.availableFrom, true)}.`, 'error');
   if (state.attempts.some((attempt) => attempt.assessmentId === id && attempt.studentId === uid())) return toast('You already submitted this assessment.', 'error');
-  openModal(item.title, `<form id="p3-attempt-form" data-assessment-id="${esc(item.id)}"><div class="callout" style="margin-bottom:18px"><strong>${Number(item.pointsPossible || 0)} points</strong> · Due ${formatDate(item.dueAt, true)}<br>Submit once you are finished. Objective answer keys are not delivered to student accounts.</div><div class="p3-question-stack">${(item.items || []).map((q, index) => `<article class="p3-question"><div class="p3-question-number">${index + 1}</div><div><h4>${esc(q.prompt)}</h4><span class="pill">${Number(q.points || 0)} pts</span>${q.type === 'multiple_choice' ? `<div class="p3-answer-options">${(q.options || []).map((option) => `<label><input type="radio" name="answer__${esc(q.id)}" value="${esc(option)}" required><span>${esc(option)}</span></label>`).join('')}</div>` : q.type === 'true_false' ? `<div class="p3-answer-options"><label><input type="radio" name="answer__${esc(q.id)}" value="true" required><span>True</span></label><label><input type="radio" name="answer__${esc(q.id)}" value="false" required><span>False</span></label></div>` : `<textarea name="answer__${esc(q.id)}" rows="5" required placeholder="Your response"></textarea>`}</div></article>`).join('')}</div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Submit assessment</button></div></form>`, 'ASSESSMENT');
+  const presented = presentedAssessmentItems(item);
+  openModal(item.title, `<form id="p3-attempt-form" data-assessment-id="${esc(item.id)}"><input type="hidden" name="presentedQuestionIds" value="${esc(presented.map((q) => q.id).join(','))}"><div class="callout" style="margin-bottom:18px"><strong>${presented.reduce((sum,q)=>sum+Number(q.points||0),0)} displayed points</strong> · Due ${formatDate(item.dueAt, true)}<br>Submit once you are finished. Objective answer keys are not delivered to student accounts.</div><div class="p3-question-stack">${presented.map((q, index) => `<article class="p3-question"><div class="p3-question-number">${index + 1}</div><div><h4>${esc(q.prompt)}</h4><span class="pill">${Number(q.points || 0)} pts</span>${q.type === 'multiple_choice' ? `<div class="p3-answer-options">${(q.options || []).map((option) => `<label><input type="radio" name="answer__${esc(q.id)}" value="${esc(option)}" required><span>${esc(option)}</span></label>`).join('')}</div>` : q.type === 'true_false' ? `<div class="p3-answer-options"><label><input type="radio" name="answer__${esc(q.id)}" value="true" required><span>True</span></label><label><input type="radio" name="answer__${esc(q.id)}" value="false" required><span>False</span></label></div>` : `<textarea name="answer__${esc(q.id)}" rows="5" required placeholder="Your response"></textarea>`}</div></article>`).join('')}</div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Submit assessment</button></div></form>`, 'ASSESSMENT');
 }
 
 async function showReviewAttempt(id) {
@@ -591,7 +630,8 @@ async function showReviewAttempt(id) {
   if (!attempt || !item || !canManageCourse(item.courseId) && !isSupport()) return toast('You cannot review that attempt.', 'error');
   const keySnap = await getDoc(doc(db, 'assessmentKeys', item.id));
   const keys = keySnap.exists() ? keySnap.data().answers || {} : {};
-  const rows = (item.items || []).map((q) => {
+  const presentedIds = Array.isArray(attempt.presentedQuestionIds) && attempt.presentedQuestionIds.length ? attempt.presentedQuestionIds : (item.items || []).map((q) => q.id);
+  const rows = (item.items || []).filter((q) => presentedIds.includes(q.id)).map((q) => {
     const answer = attempt.answers?.[q.id] ?? '';
     let suggested = '';
     if (q.type !== 'short_answer') suggested = String(answer).trim().toLowerCase() === String(keys[q.id] ?? '').trim().toLowerCase() ? Number(q.points || 0) : 0;
@@ -636,7 +676,8 @@ async function handleForm(form) {
     const questions = ids.map((id) => state.questions.find((item) => item.id === id)).filter(Boolean);
     const items = questions.map((q) => ({ id: q.id, type: q.type, prompt: q.prompt, options: q.options || [], points: Number(q.points) || 0, standardIds: q.standardIds || [] }));
     const pointsPossible = items.reduce((sum, item) => sum + Number(item.points || 0), 0);
-    const ref = await addDoc(collection(db, 'assessments'), { courseId: selected.id, schoolId: selected.schoolId, title: String(data.get('title')).trim(), description: String(data.get('description') || '').trim(), items, questionIds: ids, pointsPossible, dueAt: data.get('dueAt') ? new Date(String(data.get('dueAt'))) : null, status: String(data.get('status')), createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    const randomQuestionCount = Math.max(0, Math.min(items.length, Number(data.get('randomQuestionCount')) || 0));
+    const ref = await addDoc(collection(db, 'assessments'), { courseId: selected.id, schoolId: selected.schoolId, title: String(data.get('title')).trim(), description: String(data.get('description') || '').trim(), items, questionIds: ids, pointsPossible, availableFrom: data.get('availableFrom') ? new Date(String(data.get('availableFrom'))) : null, dueAt: data.get('dueAt') ? new Date(String(data.get('dueAt'))) : null, randomQuestionCount, shuffleQuestions: String(data.get('shuffleQuestions')) === 'yes', shuffleAnswers: String(data.get('shuffleAnswers')) === 'yes', status: String(data.get('status')), createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     const answers = {}; questions.forEach((q) => { answers[q.id] = q.correctAnswer || ''; });
     await setDoc(doc(db, 'assessmentKeys', ref.id), { assessmentId: ref.id, courseId: selected.id, schoolId: selected.schoolId, answers, createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     closeModal(); toast('Assessment created.', 'success'); return render('assessments');
@@ -644,17 +685,20 @@ async function handleForm(form) {
   if (form.id === 'p3-attempt-form') {
     if (!isStudent()) throw new Error('Only students can submit an assessment attempt.');
     const id = form.dataset.assessmentId; const item = assessment(id); if (!item || item.status !== 'published') throw new Error('Assessment unavailable.');
-    const answers = {}; (item.items || []).forEach((q) => { answers[q.id] = String(data.get(`answer__${q.id}`) ?? '').trim(); });
+    const presentedQuestionIds = String(data.get('presentedQuestionIds') || '').split(',').filter(Boolean);
+    const presentedItems = (item.items || []).filter((q) => presentedQuestionIds.includes(q.id));
+    const answers = {}; presentedItems.forEach((q) => { answers[q.id] = String(data.get(`answer__${q.id}`) ?? '').trim(); });
     const attemptId = `${id}_${uid()}`;
-    await setDoc(doc(db, 'assessmentAttempts', attemptId), { assessmentId: id, courseId: item.courseId, schoolId: item.schoolId, studentId: uid(), answers, score: null, pointsPossible: Number(item.pointsPossible) || 0, itemResults: [], feedback: '', status: 'submitted', submittedAt: serverTimestamp(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    await setDoc(doc(db, 'assessmentAttempts', attemptId), { assessmentId: id, courseId: item.courseId, schoolId: item.schoolId, studentId: uid(), answers, presentedQuestionIds, score: null, pointsPossible: presentedItems.reduce((sum,q)=>sum+Number(q.points||0),0), itemResults: [], feedback: '', status: 'submitted', submittedAt: serverTimestamp(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     closeModal(); toast('Assessment submitted.', 'success'); return render('assessments');
   }
   if (form.id === 'p3-review-form') {
     const attemptId = form.dataset.attemptId; const attempt = state.attempts.find((item) => item.id === attemptId); const item = attempt ? assessment(attempt.assessmentId) : null;
     if (!attempt || !item || (!canManageCourse(item.courseId) && !isSupport())) throw new Error('Attempt unavailable.');
-    const results = (item.items || []).map((q) => ({ questionId: q.id, standardIds: q.standardIds || [], earned: Math.max(0, Math.min(Number(q.points || 0), Number(data.get(`score__${q.id}`)) || 0)), possible: Number(q.points || 0), type: q.type }));
+    const presentedIds = Array.isArray(attempt.presentedQuestionIds) && attempt.presentedQuestionIds.length ? attempt.presentedQuestionIds : (item.items || []).map((q) => q.id);
+    const results = (item.items || []).filter((q) => presentedIds.includes(q.id)).map((q) => ({ questionId: q.id, standardIds: q.standardIds || [], earned: Math.max(0, Math.min(Number(q.points || 0), Number(data.get(`score__${q.id}`)) || 0)), possible: Number(q.points || 0), type: q.type }));
     const score = results.reduce((sum, result) => sum + result.earned, 0);
-    await updateDoc(doc(db, 'assessmentAttempts', attemptId), { itemResults: results, score, pointsPossible: Number(item.pointsPossible) || 0, feedback: String(data.get('feedback') || '').trim(), status: 'graded', gradedBy: uid(), gradedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, 'assessmentAttempts', attemptId), { itemResults: results, score, pointsPossible: results.reduce((sum, result) => sum + result.possible, 0), feedback: String(data.get('feedback') || '').trim(), status: 'graded', gradedBy: uid(), gradedAt: serverTimestamp(), updatedAt: serverTimestamp() });
     closeModal(); toast('Assessment grade finalized.', 'success'); return render(state.route || 'assessments');
   }
   if (form.id === 'p3-intervention-form') {
