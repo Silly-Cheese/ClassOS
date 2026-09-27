@@ -445,10 +445,21 @@ export function createLms({ state, db, auth, helpers }) {
     const cards = courses.map((c) => {
       const assignments = state.assignments.filter((a) => a.courseId === c.id && a.status !== 'draft');
       const teacherNames = (c.teacherIds || []).map((id) => personName(id, 'Teacher')).join(', ') || 'No teacher assigned';
-      const grade = isStudent() ? gradeFor(uid(), c.id).percent : null;
-      return `<article class="course-card"><div class="course-card-top"><span class="eyebrow">${esc(c.courseCode || c.term || 'COURSE')}</span><span class="pill success">${esc(c.status || 'active')}</span></div><h3>${esc(c.name)}</h3><p>${esc(teacherNames)}</p><div class="course-card-stats"><span><strong>${(c.studentIds || []).length}</strong> students</span><span><strong>${assignments.length}</strong> assignments</span>${isStudent() ? `<span><strong>${esc(gradeLabel(grade))}</strong> grade</span>` : ''}</div><button class="btn btn-secondary btn-block" data-lms-action="open-course" data-course-id="${esc(c.id)}">Open course</button></article>`;
+      if (isStudent()) {
+        const grade = gradeFor(uid(), c.id).percent;
+        const open = assignments.filter((a) => {
+          const status = assignmentStatus(a, uid()).label;
+          return !['Excused'].includes(status) && !status.startsWith('Graded') && !['Submitted', 'Submitted late'].includes(status);
+        });
+        const missing = assignments.filter((a) => assignmentStatus(a, uid()).label === 'Missing').length;
+        return `<article class="course-card student-course-card"><div class="course-card-top"><span class="eyebrow">${esc(c.courseCode || c.term || 'COURSE')}</span><span class="pill ${missing ? 'danger' : 'success'}">${missing ? `${missing} missing` : 'On track'}</span></div><h3>${esc(c.name)}</h3><p>${esc(teacherNames)}</p><div class="course-card-stats"><span><strong>${open.length}</strong> open</span><span><strong>${assignments.length}</strong> assignments</span><span><strong>${esc(gradeLabel(grade))}</strong> grade</span></div><button class="btn btn-primary btn-block" data-lms-action="open-course" data-course-id="${esc(c.id)}">Open course</button></article>`;
+      }
+      return `<article class="course-card"><div class="course-card-top"><span class="eyebrow">${esc(c.courseCode || c.term || 'COURSE')}</span><span class="pill success">${esc(c.status || 'active')}</span></div><h3>${esc(c.name)}</h3><p>${esc(teacherNames)}</p><div class="course-card-stats"><span><strong>${(c.studentIds || []).length}</strong> students</span><span><strong>${assignments.length}</strong> assignments</span><span><strong>${courseModules(c).length}</strong> modules</span></div><button class="btn btn-secondary btn-block" data-lms-action="open-course" data-course-id="${esc(c.id)}">Open course</button></article>`;
     }).join('');
-    return `<div class="toolbar"><div><span class="eyebrow">ACADEMICS</span><h2 style="margin:4px 0 0">Courses</h2></div></div>${courses.length ? `<section class="course-grid">${cards}</section>` : '<div class="empty-state"><strong>No courses yet</strong>Your course enrollments will appear here.</div>'}`;
+    const emptyCopy = isStudent()
+      ? '<div class="empty-state"><strong>No courses are showing yet.</strong>If you were just enrolled, ClassOS will refresh your enrollment automatically. If this remains empty, ask your teacher or school administrator to confirm you are on the course roster.</div>'
+      : '<div class="empty-state"><strong>No courses yet</strong>Your course spaces will appear here.</div>';
+    return `<div class="toolbar"><div><span class="eyebrow">ACADEMICS</span><h2 style="margin:4px 0 0">Courses</h2><p class="metric-note">${isStudent() ? 'Everything you are enrolled in, in one place.' : 'Open a course to manage learning, assignments, and students.'}</p></div></div>${courses.length ? `<section class="course-grid">${cards}</section>` : emptyCopy}`;
   }
 
   function courseView() {
@@ -459,6 +470,22 @@ export function createLms({ state, db, auth, helpers }) {
     const manager = canManageCourse(c);
     const modules = courseModules(c);
     const actions = manager ? `<button class="btn btn-primary" data-lms-action="new-assignment" data-course-id="${esc(c.id)}">New assignment</button><button class="btn btn-secondary" data-lms-action="manage-modules" data-course-id="${esc(c.id)}">Modules</button><button class="btn btn-secondary" data-lms-action="new-announcement" data-course-id="${esc(c.id)}">Announcement</button><button class="btn btn-secondary" data-lms-action="manage-roster" data-course-id="${esc(c.id)}">Roster</button>` : '';
+
+    if (isStudent()) {
+      const published = assignments.filter((a) => a.status !== 'draft');
+      const grade = gradeFor(uid(), c.id).percent;
+      const missing = published.filter((a) => assignmentStatus(a, uid()).label === 'Missing').length;
+      const open = published.filter((a) => {
+        const label = assignmentStatus(a, uid()).label;
+        return label !== 'Excused' && !label.startsWith('Graded') && !['Submitted', 'Submitted late', 'Missing'].includes(label);
+      }).length;
+      const teacherNames = (c.teacherIds || []).map((id) => personName(id, 'Teacher')).join(', ') || 'Teacher';
+      return `${hero(esc(c.name), `${esc(c.courseCode || '')}${c.courseCode && c.term ? ' · ' : ''}${esc(c.term || '')} · ${esc(teacherNames)}`)}
+        <section class="section grid grid-4">${metric('Current grade', gradeLabel(grade), letterGrade(grade))}${metric('Open work', open, open ? 'Assignments still to complete' : 'Nothing waiting')}${metric('Missing', missing, missing ? 'Needs attention' : 'No missing work')}${metric('Modules', modules.filter((m) => m.published).length, 'Published learning units')}</section>
+        <section class="section course-learning-plan"><div class="section-head"><div><span class="eyebrow">LEARNING</span><h3>Course modules</h3><p>Work through the course in order, or open any available assignment.</p></div></div>${renderModules(c, published, false)}</section>
+        <section class="section card"><div class="section-head"><div><span class="eyebrow">UPDATES</span><h3>Announcements</h3></div></div>${announcements.length ? `<div class="list">${announcements.slice(0, 8).map((a) => `<div class="announcement"><div class="announcement-meta">${formatDate(a.createdAt)}</div><strong>${esc(a.title)}</strong><p>${esc(a.body)}</p></div>`).join('')}</div>` : '<div class="empty-state"><strong>No announcements</strong>Your teacher has not posted any course updates yet.</div>'}</section>`;
+    }
+
     return `${hero(esc(c.name), `${esc(c.courseCode || '')}${c.courseCode && c.term ? ' · ' : ''}${esc(c.term || '')}`, actions)}
       <section class="section grid grid-4">${metric('Students', (c.studentIds || []).length, 'Rostered learners')}${metric('Teachers', (c.teacherIds || []).length, 'Course staff')}${metric('Modules', modules.length, 'Learning sequence')}${metric('Published work', assignments.filter((a) => a.status !== 'draft').length, 'Assignments in circulation')}</section>
       <section class="section course-learning-plan"><div class="section-head"><div><span class="eyebrow">LEARNING PLAN</span><h3>Modules & coursework</h3><p>Organize the course into a clear sequence students can follow.</p></div>${manager ? `<div class="toolbar-group"><button class="link-button" data-lms-action="manage-modules" data-course-id="${esc(c.id)}">Manage modules</button><button class="link-button" data-lms-action="grade-settings" data-course-id="${esc(c.id)}">Grade settings</button></div>` : ''}</div>${renderModules(c, assignments, manager)}</section>
