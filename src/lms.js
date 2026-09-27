@@ -354,6 +354,42 @@ export function createLms({ state, db, auth, helpers }) {
     return `<div class="course-switcher">${courses.map((c) => `<button class="course-chip ${state.selectedCourseId === c.id ? 'active' : ''}" data-lms-action="select-course" data-course-id="${esc(c.id)}" data-route="${esc(routeName)}">${esc(c.name)}</button>`).join('')}</div>`;
   }
 
+  function courseModules(c) {
+    return Array.isArray(c?.modules) ? c.modules.map((m, index) => ({
+      id: String(m.id || `module-${index + 1}`),
+      title: String(m.title || `Module ${index + 1}`),
+      description: String(m.description || ''),
+      published: m.published !== false,
+      position: Number.isFinite(Number(m.position)) ? Number(m.position) : index
+    })).sort((a, b) => a.position - b.position) : [];
+  }
+
+  function moduleName(c, moduleId) {
+    return courseModules(c).find((m) => m.id === moduleId)?.title || '';
+  }
+
+  function renderModules(c, assignments, manager) {
+    const modules = courseModules(c);
+    const unassigned = assignments.filter((a) => !a.moduleId);
+    const visibleModules = (isStudent() || isGuardian()) ? modules.filter((m) => m.published) : modules;
+    if (!visibleModules.length && !unassigned.length) {
+      return `<div class="empty-state"><strong>No modules yet</strong>${manager ? 'Create a module to organize lessons and assignments into a learning sequence.' : 'Course learning modules will appear here.'}</div>`;
+    }
+
+    const renderAssignment = (a) => {
+      const studentStatus = isStudent() ? assignmentStatus(a, uid()) : null;
+      return `<div class="module-item"><div class="module-item-icon">✓</div><div class="module-item-main"><strong>${esc(a.title)}</strong><span>${esc(a.categoryName || 'Coursework')} · ${formatDate(a.dueAt)} · ${esc(a.pointsPossible)} pts${a.status === 'draft' ? ' · Draft' : ''}</span></div>${isStudent() ? `<button class="pill clickable ${studentStatus.cls}" data-lms-action="submit-assignment" data-assignment-id="${esc(a.id)}">${esc(studentStatus.label)}</button>` : manager ? `<button class="pill clickable info" data-lms-action="grade-assignment" data-assignment-id="${esc(a.id)}">Grade</button>` : ''}</div>`;
+    };
+
+    const sections = visibleModules.map((m) => {
+      const items = assignments.filter((a) => a.moduleId === m.id && (!isStudent() && !isGuardian() || a.status !== 'draft'));
+      return `<section class="course-module"><div class="course-module-head"><div><span class="eyebrow">${m.published ? 'MODULE' : 'DRAFT MODULE'}</span><h4>${esc(m.title)}</h4>${m.description ? `<p>${esc(m.description)}</p>` : ''}</div><span class="pill ${m.published ? 'success' : 'warning'}">${items.length} item${items.length === 1 ? '' : 's'}</span></div><div class="course-module-items">${items.length ? items.map(renderAssignment).join('') : '<div class="module-empty">No assignments are in this module yet.</div>'}</div></section>`;
+    }).join('');
+
+    const loose = unassigned.length ? `<section class="course-module course-module--loose"><div class="course-module-head"><div><span class="eyebrow">UNASSIGNED</span><h4>Other coursework</h4><p>Assignments not yet placed into a module.</p></div><span class="pill">${unassigned.length}</span></div><div class="course-module-items">${unassigned.map(renderAssignment).join('')}</div></section>` : '';
+    return sections + loose;
+  }
+
   function hero(title, copy, actions = '') {
     return `<section class="hero"><span class="eyebrow">CLASSOS LMS</span><h1>${title}</h1><p>${copy}</p>${actions ? `<div class="hero-actions">${actions}</div>` : ''}</section>`;
   }
@@ -421,14 +457,12 @@ export function createLms({ state, db, auth, helpers }) {
     const assignments = state.assignments.filter((a) => a.courseId === c.id).sort((a, b) => (asDate(a.dueAt)?.getTime() || Infinity) - (asDate(b.dueAt)?.getTime() || Infinity));
     const announcements = state.announcements.filter((a) => a.courseId === c.id).sort((a, b) => (asDate(b.createdAt)?.getTime() || 0) - (asDate(a.createdAt)?.getTime() || 0));
     const manager = canManageCourse(c);
-    const actions = manager ? `<button class="btn btn-primary" data-lms-action="new-assignment" data-course-id="${esc(c.id)}">New assignment</button><button class="btn btn-secondary" data-lms-action="new-announcement" data-course-id="${esc(c.id)}">Announcement</button><button class="btn btn-secondary" data-lms-action="manage-roster" data-course-id="${esc(c.id)}">Roster</button>` : '';
+    const modules = courseModules(c);
+    const actions = manager ? `<button class="btn btn-primary" data-lms-action="new-assignment" data-course-id="${esc(c.id)}">New assignment</button><button class="btn btn-secondary" data-lms-action="manage-modules" data-course-id="${esc(c.id)}">Modules</button><button class="btn btn-secondary" data-lms-action="new-announcement" data-course-id="${esc(c.id)}">Announcement</button><button class="btn btn-secondary" data-lms-action="manage-roster" data-course-id="${esc(c.id)}">Roster</button>` : '';
     return `${hero(esc(c.name), `${esc(c.courseCode || '')}${c.courseCode && c.term ? ' · ' : ''}${esc(c.term || '')}`, actions)}
-      <section class="section grid grid-4">${metric('Students', (c.studentIds || []).length, 'Rostered learners')}${metric('Teachers', (c.teacherIds || []).length, 'Course staff')}${metric('Assignments', assignments.filter((a) => a.status !== 'draft').length, 'Published work')}${metric('Grade categories', courseCategories(c).length, 'Weighted groups')}</section>
-      <section class="section grid grid-2"><div class="card"><div class="section-head"><div><span class="eyebrow">ASSIGNMENTS</span><h3>Coursework</h3></div>${manager ? `<button class="link-button" data-lms-action="grade-settings" data-course-id="${esc(c.id)}">Grade settings</button>` : ''}</div>${assignments.length ? `<div class="list">${assignments.slice(0, 10).map((a) => {
-        const studentStatus = isStudent() ? assignmentStatus(a, uid()) : null;
-        return `<div class="list-row"><div class="list-main"><strong>${esc(a.title)}</strong><span>${esc(a.categoryName || 'Coursework')} · ${formatDate(a.dueAt)} · ${esc(a.pointsPossible)} pts${a.status === 'draft' ? ' · Draft' : ''}</span></div>${isStudent() ? `<button class="pill clickable ${studentStatus.cls}" data-lms-action="submit-assignment" data-assignment-id="${esc(a.id)}">${esc(studentStatus.label)}</button>` : manager ? `<button class="pill clickable info" data-lms-action="grade-assignment" data-assignment-id="${esc(a.id)}">Grade</button>` : ''}</div>`;
-      }).join('')}</div>` : '<div class="empty-state"><strong>No assignments yet</strong>This course does not have coursework yet.</div>'}</div>
-      <div class="card"><div class="section-head"><div><span class="eyebrow">ANNOUNCEMENTS</span><h3>Course updates</h3></div></div>${announcements.length ? `<div class="list">${announcements.slice(0, 8).map((a) => `<div class="announcement"><div class="announcement-meta">${formatDate(a.createdAt)}</div><strong>${esc(a.title)}</strong><p>${esc(a.body)}</p></div>`).join('')}</div>` : '<div class="empty-state"><strong>No announcements</strong>Course updates will appear here.</div>'}</div></section>`;
+      <section class="section grid grid-4">${metric('Students', (c.studentIds || []).length, 'Rostered learners')}${metric('Teachers', (c.teacherIds || []).length, 'Course staff')}${metric('Modules', modules.length, 'Learning sequence')}${metric('Published work', assignments.filter((a) => a.status !== 'draft').length, 'Assignments in circulation')}</section>
+      <section class="section course-learning-plan"><div class="section-head"><div><span class="eyebrow">LEARNING PLAN</span><h3>Modules & coursework</h3><p>Organize the course into a clear sequence students can follow.</p></div>${manager ? `<div class="toolbar-group"><button class="link-button" data-lms-action="manage-modules" data-course-id="${esc(c.id)}">Manage modules</button><button class="link-button" data-lms-action="grade-settings" data-course-id="${esc(c.id)}">Grade settings</button></div>` : ''}</div>${renderModules(c, assignments, manager)}</section>
+      <section class="section card"><div class="section-head"><div><span class="eyebrow">ANNOUNCEMENTS</span><h3>Course updates</h3></div></div>${announcements.length ? `<div class="list">${announcements.slice(0, 8).map((a) => `<div class="announcement"><div class="announcement-meta">${formatDate(a.createdAt)}</div><strong>${esc(a.title)}</strong><p>${esc(a.body)}</p></div>`).join('')}</div>` : '<div class="empty-state"><strong>No announcements</strong>Course updates will appear here.</div>'}</section>`;
   }
 
   function assignmentsView() {
@@ -560,8 +594,8 @@ export function createLms({ state, db, auth, helpers }) {
   function peopleView() {
     if (!isSupport()) return '<div class="empty-state"><strong>Directory restricted</strong>Your role does not include school-directory access.</div>';
     const people = isOwner() ? (state.users || []) : state.lmsUsers;
-    const rows = people.map((u) => `<tr><td><span class="row-title">${esc(u.displayName || 'Unnamed')}</span><span class="row-subtitle">${esc(u.email || '')}</span></td><td>${esc(roleName(u.role))}</td><td><span class="pill ${u.status === 'active' ? 'success' : 'warning'}">${esc(u.status || 'pending')}</span></td><td>${esc((u.schoolIds || []).map((id) => state.schools.find((s) => s.id === id)?.name).filter(Boolean).join(', ') || '—')}</td></tr>`).join('');
-    return `<div class="toolbar"><div><span class="eyebrow">DIRECTORY</span><h2 style="margin:4px 0 0">People & access</h2></div><div class="toolbar-group">${isOwner() ? '<button class="btn btn-secondary" data-action="invite">Pre-register user</button>' : ''}${isAdmin() ? '<button class="btn btn-primary" data-lms-action="link-guardian">Link guardian</button>' : ''}</div></div><section class="card">${rows ? `<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>School</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-state">No people are available in this directory.</div>'}</section>`;
+    const rows = people.map((u) => `<tr><td><span class="row-title">${esc(u.displayName || 'Unnamed')}</span><span class="row-subtitle">${esc(u.email || '')}</span></td><td>${esc(roleName(u.role))}</td><td><span class="pill ${u.status === 'active' ? 'success' : 'warning'}">${esc(u.status || 'pending')}</span></td><td>${esc((u.schoolIds || []).map((id) => state.schools.find((s) => s.id === id)?.name).filter(Boolean).join(', ') || '—')}</td><td>${u.role === 'student' ? `<button class="pill clickable info" data-lms-action="student-workspace" data-student-id="${esc(u.id)}">Open student</button>` : ''}</td></tr>`).join('');
+    return `<div class="toolbar"><div><span class="eyebrow">DIRECTORY</span><h2 style="margin:4px 0 0">People & access</h2></div><div class="toolbar-group">${isOwner() ? '<button class="btn btn-secondary" data-action="invite">Pre-register user</button>' : ''}${isAdmin() ? '<button class="btn btn-primary" data-lms-action="link-guardian">Link guardian</button>' : ''}</div></div><section class="card">${rows ? `<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>School</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-state">No people are available in this directory.</div>'}</section>`;
   }
 
   function routeAllowed(routeName) {
@@ -569,7 +603,7 @@ export function createLms({ state, db, auth, helpers }) {
     const r = role();
     if (!ACTIVE_ROLES.includes(r)) return ['dashboard', 'settings'].includes(routeName);
     if (['organizations', 'platform'].includes(routeName)) return isOwner();
-    if (routeName === 'people') return isSupport();
+    if (routeName === 'people') return isSupport() || isTeacher();
     if (routeName === 'absent') return isStudent();
     if (routeName === 'family') return isGuardian();
     if (routeName === 'attendance') return ['platform_owner', 'district_admin', 'school_admin', 'counselor', 'teacher', 'guardian', 'student'].includes(r);
@@ -608,12 +642,80 @@ export function createLms({ state, db, auth, helpers }) {
     const selected = course(courseId) || course(state.selectedCourseId) || manageable[0];
     if (!selected || !manageable.length) return toast('You do not have a course available for assignment creation.', 'error');
     const categories = courseCategories(selected);
-    openModal('Create assignment', `<form id="lms-assignment-form"><div class="form-grid"><div class="field span-2"><label>Course</label><select name="courseId">${manageable.map((c) => `<option value="${esc(c.id)}" ${c.id === selected.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div><div class="field span-2"><label>Title</label><input name="title" required maxlength="120" placeholder="Assignment title"></div><div class="field span-2"><label>Instructions</label><textarea name="instructions" rows="5" placeholder="What should students do?"></textarea></div><div class="field"><label>Category</label><select name="categoryId">${categories.map((cat) => `<option value="${esc(cat.id)}">${esc(cat.name)} (${cat.weight}%)</option>`).join('')}</select></div><div class="field"><label>Points possible</label><input name="pointsPossible" type="number" min="0" step="0.01" value="100" required></div><div class="field"><label>Due date & time</label><input name="dueAt" type="datetime-local" required></div><div class="field"><label>Status</label><select name="status"><option value="published">Publish now</option><option value="draft">Save draft</option></select></div><div class="field span-2"><label>Submission format</label><select name="submissionType"><option value="both">Text response or link</option><option value="text">Text response</option><option value="link">External link</option></select></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Create assignment</button></div></form>`, 'COURSEWORK');
+    const modules = courseModules(selected);
+    openModal('Create assignment', `<form id="lms-assignment-form">
+      <div class="assignment-builder">
+        <div class="assignment-builder-section">
+          <div class="assignment-builder-heading"><span>1</span><div><strong>Assignment details</strong><small>What students will see and do</small></div></div>
+          <div class="form-grid">
+            <div class="field span-2"><label>Course</label><select name="courseId">${manageable.map((c) => `<option value="${esc(c.id)}" ${c.id === selected.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+            <div class="field span-2"><label>Title</label><input name="title" required maxlength="120" placeholder="Example: Cellular Respiration Lab Report"></div>
+            <div class="field span-2"><label>Instructions</label><textarea name="instructions" rows="6" placeholder="Explain the task, expectations, and resources students should use."></textarea></div>
+          </div>
+        </div>
+        <div class="assignment-builder-section">
+          <div class="assignment-builder-heading"><span>2</span><div><strong>Learning placement</strong><small>Where this work belongs in the course</small></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Module</label><select name="moduleId"><option value="">No module / Other coursework</option>${modules.map((m) => `<option value="${esc(m.id)}">${esc(m.title)}</option>`).join('')}</select></div>
+            <div class="field"><label>Grade category</label><select name="categoryId">${categories.map((cat) => `<option value="${esc(cat.id)}">${esc(cat.name)} (${cat.weight}%)</option>`).join('')}</select></div>
+            <div class="field"><label>Points possible</label><input name="pointsPossible" type="number" min="0" step="0.01" value="100" required></div>
+            <div class="field"><label>Submission format</label><select name="submissionType"><option value="both">Text response or link</option><option value="text">Text response</option><option value="link">External link</option></select></div>
+          </div>
+        </div>
+        <div class="assignment-builder-section">
+          <div class="assignment-builder-heading"><span>3</span><div><strong>Schedule & rules</strong><small>Control when students can work and what happens after the deadline</small></div></div>
+          <div class="form-grid">
+            <div class="field"><label>Available from</label><input name="availableFrom" type="datetime-local"></div>
+            <div class="field"><label>Due date & time</label><input name="dueAt" type="datetime-local" required></div>
+            <div class="field"><label>Status</label><select name="status"><option value="published">Publish now</option><option value="draft">Save draft</option></select></div>
+            <div class="field"><label>Late submissions</label><select name="allowLateSubmissions"><option value="yes">Allow after due date</option><option value="no">Close at due date</option></select></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">Create assignment</button></div>
+    </form>`, 'COURSEWORK');
+  }
+
+  function showModuleManager(c) {
+    if (!c || !canManageCourse(c)) return;
+    const modules = courseModules(c);
+    const rows = modules.map((m, index) => `<div class="module-manager-row"><div class="module-manager-order">${index + 1}</div><div class="module-manager-main"><strong>${esc(m.title)}</strong><span>${esc(m.description || 'No description')}${m.published ? '' : ' · Draft'}</span></div><button type="button" class="pill clickable danger" data-lms-action="delete-module" data-course-id="${esc(c.id)}" data-module-id="${esc(m.id)}">Remove</button></div>`).join('');
+    openModal(`Modules · ${c.name}`, `<div class="callout info" style="margin-bottom:16px"><strong>Modules create the learning sequence.</strong> Assignments can be placed into a module when they are created.</div>
+      <div class="module-manager-list">${rows || '<div class="empty-state"><strong>No modules yet</strong>Create the first learning module below.</div>'}</div>
+      <form id="lms-module-form"><input type="hidden" name="courseId" value="${esc(c.id)}"><div class="assignment-builder-section"><div class="assignment-builder-heading"><span>+</span><div><strong>Add module</strong><small>Build the next part of the course sequence</small></div></div><div class="form-grid"><div class="field span-2"><label>Module title</label><input name="title" required maxlength="100" placeholder="Unit 1 — Foundations"></div><div class="field span-2"><label>Description</label><textarea name="description" rows="3" placeholder="What students will learn in this module"></textarea></div><div class="field"><label>Visibility</label><select name="published"><option value="yes">Published</option><option value="no">Draft</option></select></div></div></div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Close</button><button class="btn btn-primary">Add module</button></div></form>`, 'COURSE MODULES');
+  }
+
+  function showStudentWorkspace(studentId) {
+    const student = person(studentId);
+    if (!student || student.role !== 'student') return;
+    const courses = visibleCourses().filter((c) => (c.studentIds || []).includes(studentId));
+    const courseRows = courses.map((c) => {
+      const result = gradeFor(studentId, c.id);
+      const assignments = state.assignments.filter((a) => a.courseId === c.id && a.status !== 'draft');
+      const missing = assignments.filter((a) => assignmentStatus(a, studentId).label === 'Missing').length;
+      return `<div class="student-workspace-course"><div><strong>${esc(c.name)}</strong><span>${esc(c.courseCode || '')}</span></div><div class="student-workspace-course-stats"><span><b>${esc(gradeLabel(result.percent))}</b> ${esc(letterGrade(result.percent))}</span><span class="${missing ? 'danger-text' : ''}">${missing} missing</span></div><button class="pill clickable info" data-lms-action="student-grade-detail" data-course-id="${esc(c.id)}" data-student-id="${esc(studentId)}">Grades</button></div>`;
+    }).join('');
+    const attendance = state.attendance.filter((r) => r.studentId === studentId);
+    const absent = attendance.filter((r) => r.status === 'absent').length;
+    const tardy = attendance.filter((r) => r.status === 'tardy').length;
+    const allAssignments = state.assignments.filter((a) => courses.some((c) => c.id === a.courseId) && a.status !== 'draft');
+    const missingTotal = allAssignments.filter((a) => assignmentStatus(a, studentId).label === 'Missing').length;
+    const grades = courses.map((c) => gradeFor(studentId, c.id).percent).filter((v) => v !== null);
+    const average = grades.length ? grades.reduce((sum, value) => sum + value, 0) / grades.length : null;
+    openModal(student.displayName || student.email || 'Student', `<div class="student-workspace-hero"><div class="avatar student-workspace-avatar">${esc((student.displayName || student.email || 'S').slice(0,1).toUpperCase())}</div><div><span class="eyebrow">STUDENT WORKSPACE</span><h3>${esc(student.displayName || 'Student')}</h3><p>${esc(student.email || '')}</p></div></div>
+      <div class="student-workspace-metrics"><div><span>Academic average</span><strong>${esc(gradeLabel(average))}</strong></div><div><span>Missing work</span><strong>${missingTotal}</strong></div><div><span>Absences</span><strong>${absent}</strong></div><div><span>Tardies</span><strong>${tardy}</strong></div></div>
+      <div class="student-workspace-section"><div class="section-head"><div><span class="eyebrow">COURSES</span><h4>Current academic picture</h4></div></div>${courseRows || '<div class="empty-state">This student is not enrolled in a visible course.</div>'}</div>`, 'STUDENT');
   }
 
   function showSubmissionForm(assignmentId) {
     const a = state.assignments.find((x) => x.id === assignmentId);
     if (!a || !isStudent()) return;
+    const availableFrom = asDate(a.availableFrom);
+    const dueAt = asDate(a.dueAt);
+    const locked = availableFrom && availableFrom > new Date();
+    const closed = a.allowLateSubmissions === false && dueAt && dueAt < new Date();
+    if (locked) return toast(`This assignment opens ${formatDate(a.availableFrom)}.`, 'error');
+    if (closed) return toast('This assignment closed at the due date.', 'error');
     const existing = studentSubmission(a.id, uid());
     openModal(a.title, `<div class="assignment-brief"><span class="pill">${esc(course(a.courseId)?.name || 'Course')}</span><p>${esc(a.instructions || 'No additional instructions.')}</p><div class="assignment-meta"><span>${formatDate(a.dueAt)}</span><span>${esc(a.pointsPossible)} points</span></div></div>${a.status === 'draft' ? '<div class="callout warning">This assignment is still a draft.</div>' : `<form id="lms-submission-form"><input type="hidden" name="assignmentId" value="${esc(a.id)}"><div class="field"><label>Response</label><textarea name="responseText" rows="7" ${a.submissionType === 'link' ? 'disabled' : ''} placeholder="Type your response here">${esc(existing?.responseText || '')}</textarea></div><div class="field"><label>Link</label><input name="linkUrl" type="url" ${a.submissionType === 'text' ? 'disabled' : ''} value="${esc(existing?.linkUrl || '')}" placeholder="https://..."></div>${existing?.status === 'graded' ? `<div class="callout info"><strong>Current grade: ${esc(existing.score)}/${esc(a.pointsPossible)}</strong><br>${esc(existing.feedback || 'No written feedback.')}</div>` : ''}<div class="modal-actions"><button type="button" class="btn btn-secondary" data-action="close">Cancel</button><button class="btn btn-primary">${existing ? 'Update submission' : 'Submit assignment'}</button></div></form>`}`, 'ASSIGNMENT');
   }
@@ -747,6 +849,8 @@ export function createLms({ state, db, auth, helpers }) {
       navigate('course');
     }
     if (action === 'new-assignment') showAssignmentForm(target.dataset.courseId || null);
+    if (action === 'manage-modules') showModuleManager(course(target.dataset.courseId));
+    if (action === 'student-workspace') showStudentWorkspace(target.dataset.studentId);
     if (action === 'submit-assignment') showSubmissionForm(target.dataset.assignmentId);
     if (action === 'grade-assignment') showGradeQueue(target.dataset.assignmentId);
     if (action === 'grade-student') showGradeForm(target.dataset.assignmentId, target.dataset.studentId);
@@ -759,6 +863,17 @@ export function createLms({ state, db, auth, helpers }) {
     if (action === 'open-message') showMessage(target.dataset.messageId);
     if (action === 'link-guardian') showGuardianLink();
     if (action === 'student-grade-detail') showStudentGradeDetail(target.dataset.courseId, target.dataset.studentId);
+    if (action === 'delete-module') {
+      const c = course(target.dataset.courseId);
+      if (!c || !canManageCourse(c)) return true;
+      const next = courseModules(c).filter((m) => m.id !== target.dataset.moduleId).map((m, index) => ({ ...m, position: index }));
+      await updateDoc(doc(db, 'courses', c.id), { modules: next, updatedAt: serverTimestamp() });
+      c.modules = next;
+      state.assignments.filter((a) => a.courseId === c.id && a.moduleId === target.dataset.moduleId).forEach((a) => { a.moduleId = ''; });
+      await logAction('course.module_remove', 'course', c.id, { moduleId: target.dataset.moduleId });
+      toast('Module removed. Its assignments remain available as unassigned coursework.', 'success');
+      showModuleManager(c);
+    }
     if (action === 'roster-change') {
       const c = course(target.dataset.courseId);
       if (!c || !canManageCourse(c)) return true;
@@ -807,11 +922,28 @@ export function createLms({ state, db, auth, helpers }) {
         organizationId: c.organizationId || '', schoolId: c.schoolId, courseId: c.id,
         title: data.title.trim(), instructions: data.instructions.trim(),
         categoryId: cat.id, categoryName: cat.name, pointsPossible: Number(data.pointsPossible) || 0,
+        moduleId: data.moduleId || '', availableFrom: data.availableFrom ? Timestamp.fromDate(new Date(data.availableFrom)) : null,
         dueAt: Timestamp.fromDate(due), status: data.status, submissionType: data.submissionType,
+        allowLateSubmissions: data.allowLateSubmissions !== 'no',
         createdBy: uid(), teacherIds: c.teacherIds || [], createdAt: serverTimestamp(), updatedAt: serverTimestamp()
       });
       await logAction('assignment.create', 'assignment', ref.id, { courseId: c.id, title: data.title.trim() });
       closeModal(); toast('Assignment created.', 'success'); await navigate('assignments');
+    }
+
+    if (form.id === 'lms-module-form') {
+      const c = course(data.courseId);
+      if (!c || !canManageCourse(c)) throw new Error('You cannot change modules in this course.');
+      const modules = courseModules(c);
+      const title = data.title.trim();
+      const id = `module-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
+      const next = [...modules, { id, title, description: data.description.trim(), published: data.published !== 'no', position: modules.length }];
+      await updateDoc(doc(db, 'courses', c.id), { modules: next, updatedAt: serverTimestamp() });
+      c.modules = next;
+      await logAction('course.module_create', 'course', c.id, { moduleId: id, title });
+      toast('Module added.', 'success');
+      showModuleManager(c);
+      return true;
     }
 
     if (form.id === 'lms-submission-form') {
