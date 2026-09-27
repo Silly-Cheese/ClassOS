@@ -23,12 +23,16 @@ async function applyTeacherEnrollment(user) {
   if (!courseSnap.exists()) return;
   const course = courseSnap.data();
   if (course.schoolId !== invite.schoolId || course.organizationId !== invite.organizationId) return;
-  if ((course.studentIds || []).includes(user.uid)) return;
+  if ((course.studentIds || []).includes(user.uid)) {
+    window.dispatchEvent(new CustomEvent('classos:enrollment-updated', { detail: { courseId: invite.courseId } }));
+    return;
+  }
 
   await updateDoc(courseRef, {
     studentIds: arrayUnion(user.uid),
     updatedAt: serverTimestamp()
   });
+  window.dispatchEvent(new CustomEvent('classos:enrollment-updated', { detail: { courseId: invite.courseId } }));
 }
 
 onAuthStateChanged(auth, (user) => {
