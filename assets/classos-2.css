@@ -441,3 +441,82 @@ html.theme-dark .assignment-builder-section {
   .student-workspace-course { grid-template-columns:1fr; gap:6px; }
   .student-workspace-course-stats { justify-content:flex-start; }
 }
+
+
+.grading-workspace {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+
+.grading-course-group .section-head {
+  margin-bottom:8px;
+}
+
+.grading-queue-row .btn-small {
+  min-height:32px;
+  padding:6px 10px;
+  font-size:.7rem;
+}
+
+.rubric-editor {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.rubric-editor-row {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 110px;
+  gap:8px;
+}
+
+.rubric-editor-row input {
+  width:100%;
+}
+
+.grading-rubric {
+  margin-bottom:16px;
+  padding:12px;
+  border:1px solid var(--classos2-border);
+  border-radius:12px;
+  background:var(--classos2-soft);
+}
+
+.grading-rubric .section-head {
+  margin-bottom:8px;
+}
+
+.grading-rubric-row {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 100px;
+  gap:12px;
+  align-items:center;
+  padding:8px 0;
+  border-top:1px solid var(--classos2-border);
+}
+
+.grading-rubric-row:first-of-type {
+  border-top:0;
+}
+
+.grading-rubric-row strong,
+.grading-rubric-row span {
+  display:block;
+}
+
+.grading-rubric-row strong {
+  font-size:.75rem;
+}
+
+.grading-rubric-row span {
+  margin-top:2px;
+  color:var(--muted);
+  font-size:.65rem;
+}
+
+@media (max-width: 760px) {
+  .grading-workspace { grid-template-columns:1fr; }
+  .rubric-editor-row { grid-template-columns:minmax(0,1fr) 90px; }
+  .grading-rubric-row { grid-template-columns:minmax(0,1fr) 84px; }
+}
