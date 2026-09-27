@@ -327,7 +327,7 @@ function settingsView() {
 
 const meta = {
   dashboard: ['Home', 'CLASSOS'], courses: ['Courses', 'ACADEMICS'], course: ['Course', 'ACADEMICS'],
-  assignments: ['Assignments', 'COURSEWORK'], gradebook: ['Gradebook', 'GRADES'],
+  assignments: ['Assignments', 'COURSEWORK'], gradebook: ['Gradebook', 'GRADES'], grading: ['Needs Grading', 'GRADING'],
   attendance: ['Attendance', 'ATTENDANCE'], calendar: ['Calendar', 'PLANNER'],
   inbox: ['Inbox', 'COMMUNICATION'], absent: ['Absent Mode', 'RECOVERY'], family: ['Family', 'FAMILY VIEW'],
   people: ['People', 'DIRECTORY'], organizations: ['Organizations', 'STRUCTURE'],
@@ -351,6 +351,7 @@ async function render(route = state.route) {
       course: lms.course,
       assignments: lms.assignments,
       gradebook: lms.gradebook,
+      grading: lms.grading,
       attendance: lms.attendance,
       calendar: lms.calendar,
       inbox: lms.inbox,
