@@ -483,8 +483,8 @@ export function createLms({ state, db, auth, helpers }) {
   }
 
   function gradingView() {
-    if (!canTeach() && !isSupport()) return '<div class="empty-state"><strong>Grading unavailable</strong>Your role does not include grading access.</div>';
-    const courses = visibleCourses().filter((item) => canManageCourse(item) || isSupport());
+    if (!canTeach()) return '<div class="empty-state"><strong>Grading unavailable</strong>Your role does not include grading access.</div>';
+    const courses = visibleCourses().filter((item) => canManageCourse(item));
     const queue = state.submissions
       .filter((s) => courses.some((c) => c.id === s.courseId) && ['submitted', 'late'].includes(s.status))
       .sort((a, b) => (asDate(a.submittedAt)?.getTime() || 0) - (asDate(b.submittedAt)?.getTime() || 0));
@@ -612,7 +612,7 @@ export function createLms({ state, db, auth, helpers }) {
   }
 
   function peopleView() {
-    if (!isSupport()) return '<div class="empty-state"><strong>Directory restricted</strong>Your role does not include school-directory access.</div>';
+    if (!isSupport() && !isTeacher()) return '<div class="empty-state"><strong>Directory restricted</strong>Your role does not include school-directory access.</div>';
     const people = isOwner() ? (state.users || []) : state.lmsUsers;
     const rows = people.map((u) => `<tr><td><span class="row-title">${esc(u.displayName || 'Unnamed')}</span><span class="row-subtitle">${esc(u.email || '')}</span></td><td>${esc(roleName(u.role))}</td><td><span class="pill ${u.status === 'active' ? 'success' : 'warning'}">${esc(u.status || 'pending')}</span></td><td>${esc((u.schoolIds || []).map((id) => state.schools.find((s) => s.id === id)?.name).filter(Boolean).join(', ') || '—')}</td><td>${u.role === 'student' ? `<button class="pill clickable info" data-lms-action="student-workspace" data-student-id="${esc(u.id)}">Open student</button>` : ''}</td></tr>`).join('');
     return `<div class="toolbar"><div><span class="eyebrow">DIRECTORY</span><h2 style="margin:4px 0 0">People & access</h2></div><div class="toolbar-group">${isOwner() ? '<button class="btn btn-secondary" data-action="invite">Pre-register user</button>' : ''}${isAdmin() ? '<button class="btn btn-primary" data-lms-action="link-guardian">Link guardian</button>' : ''}</div></div><section class="card">${rows ? `<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>School</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="empty-state">No people are available in this directory.</div>'}</section>`;
@@ -624,6 +624,7 @@ export function createLms({ state, db, auth, helpers }) {
     if (!ACTIVE_ROLES.includes(r)) return ['dashboard', 'settings'].includes(routeName);
     if (['organizations', 'platform'].includes(routeName)) return isOwner();
     if (routeName === 'people') return isSupport() || isTeacher();
+    if (routeName === 'grading') return canTeach();
     if (routeName === 'absent') return isStudent();
     if (routeName === 'family') return isGuardian();
     if (routeName === 'attendance') return ['platform_owner', 'district_admin', 'school_admin', 'counselor', 'teacher', 'guardian', 'student'].includes(r);
@@ -690,6 +691,12 @@ export function createLms({ state, db, auth, helpers }) {
             <div class="field"><label>Due date & time</label><input name="dueAt" type="datetime-local" required></div>
             <div class="field"><label>Status</label><select name="status"><option value="published">Publish now</option><option value="draft">Save draft</option></select></div>
             <div class="field"><label>Late submissions</label><select name="allowLateSubmissions"><option value="yes">Allow after due date</option><option value="no">Close at due date</option></select></div>
+          </div>
+        </div>
+        <div class="assignment-builder-section">
+          <div class="assignment-builder-heading"><span>4</span><div><strong>Rubric</strong><small>Optional criteria for faster, more consistent grading</small></div></div>
+          <div class="rubric-editor">
+            <div class="rubric-editor-row"><input name="rubricName_0" placeholder="Criterion"><input name="rubricPoints_0" type="number" min="0" step=".5" placeholder="Points"></div><div class="rubric-editor-row"><input name="rubricName_1" placeholder="Criterion"><input name="rubricPoints_1" type="number" min="0" step=".5" placeholder="Points"></div><div class="rubric-editor-row"><input name="rubricName_2" placeholder="Criterion"><input name="rubricPoints_2" type="number" min="0" step=".5" placeholder="Points"></div><div class="rubric-editor-row"><input name="rubricName_3" placeholder="Criterion"><input name="rubricPoints_3" type="number" min="0" step=".5" placeholder="Points"></div>
           </div>
         </div>
       </div>
@@ -989,13 +996,18 @@ export function createLms({ state, db, auth, helpers }) {
       const cat = categories.find((x) => x.id === data.categoryId) || categories[0];
       const due = new Date(data.dueAt);
       if (Number.isNaN(due.getTime())) throw new Error('Choose a valid due date.');
+      const rubric = [0,1,2,3].map((i) => {
+        const name = String(data[`rubricName_${i}`] || '').trim();
+        const points = Number(data[`rubricPoints_${i}`]);
+        return name && Number.isFinite(points) && points >= 0 ? { id: `criterion-${i+1}`, name, points } : null;
+      }).filter(Boolean);
       const ref = await addDoc(collection(db, 'assignments'), {
         organizationId: c.organizationId || '', schoolId: c.schoolId, courseId: c.id,
         title: data.title.trim(), instructions: data.instructions.trim(),
         categoryId: cat.id, categoryName: cat.name, pointsPossible: Number(data.pointsPossible) || 0,
         moduleId: data.moduleId || '', availableFrom: data.availableFrom ? Timestamp.fromDate(new Date(data.availableFrom)) : null,
         dueAt: Timestamp.fromDate(due), status: data.status, submissionType: data.submissionType,
-        allowLateSubmissions: data.allowLateSubmissions !== 'no',
+        allowLateSubmissions: data.allowLateSubmissions !== 'no', rubric,
         createdBy: uid(), teacherIds: c.teacherIds || [], createdAt: serverTimestamp(), updatedAt: serverTimestamp()
       });
       await logAction('assignment.create', 'assignment', ref.id, { courseId: c.id, title: data.title.trim() });
