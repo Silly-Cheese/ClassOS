@@ -643,7 +643,7 @@ function showQuestionForm(questionId = '') {
   const selectedStandard = existing?.standardIds?.[0] || '';
   openModal(existing ? 'Edit question' : 'Add question', `<form id="p3-question-form">
     <input type="hidden" name="questionId" value="${esc(existing?.id || '')}">
-    ${existing && inAssessments ? `<div class="callout info" style="margin-bottom:14px"><strong>Used in ${inAssessments} assessment${inAssessments === 1 ? '' : 's'}.</strong><br>Editing this bank question changes future assessment snapshots. Existing assessments keep their current copy until you edit and save that assessment.</div>` : ''}
+    ${existing && inAssessments ? `<div class="callout info" style="margin-bottom:14px"><strong>Used in ${inAssessments} assessment${inAssessments === 1 ? '' : 's'}.</strong><br>Editing this bank question changes future assessment snapshots. Existing assessments keep their current copy until you edit and save that assessment. Assessments with attempts keep their locked snapshot.</div>` : ''}
     <div class="form-grid">
       <div class="field"><label>Type</label><select name="type"><option value="multiple_choice" ${existing?.type === 'multiple_choice' ? 'selected' : ''}>Multiple choice</option><option value="true_false" ${existing?.type === 'true_false' ? 'selected' : ''}>True / False</option><option value="short_answer" ${existing?.type === 'short_answer' ? 'selected' : ''}>Short answer</option></select></div>
       <div class="field"><label>Points</label><input name="points" type="number" min="1" step="0.5" value="${esc(existing?.points ?? 1)}" required></div>
@@ -816,7 +816,10 @@ async function handleForm(form) {
     const ids = [...new Set(data.getAll('questionId').map(String))]; if (!ids.length) throw new Error('Select at least one question.');
     const questions = ids.map((id) => state.questions.find((item) => item.id === id)).filter(Boolean);
     if (questions.length !== ids.length) throw new Error('One or more selected questions are unavailable.');
-    const items = questions.map((q) => ({ id: q.id, type: q.type, prompt: q.prompt, options: q.options || [], points: Number(q.points) || 0, standardIds: q.standardIds || [] }));
+    const hasAttempts = existing ? state.attempts.some((item) => item.assessmentId === existing.id) : false;
+    const items = hasAttempts
+      ? [...(existing.items || [])]
+      : questions.map((q) => ({ id: q.id, type: q.type, prompt: q.prompt, options: q.options || [], points: Number(q.points) || 0, standardIds: q.standardIds || [] }));
     const pointsPossible = items.reduce((sum, item) => sum + Number(item.points || 0), 0);
     const randomQuestionCount = Math.max(0, Math.min(items.length, Number(data.get('randomQuestionCount')) || 0));
     const availableFrom = data.get('availableFrom') ? new Date(String(data.get('availableFrom'))) : null;
@@ -828,15 +831,16 @@ async function handleForm(form) {
     const answers = {}; questions.forEach((q) => { answers[q.id] = q.correctAnswer || ''; });
 
     if (existing) {
-      const hasAttempts = state.attempts.some((item) => item.assessmentId === existing.id);
       if (hasAttempts) {
         const originalIds = [...(existing.questionIds || [])].sort();
         const submittedIds = [...ids].sort();
         if (JSON.stringify(originalIds) !== JSON.stringify(submittedIds)) throw new Error('The question pool is locked because attempts already exist.');
       }
       await updateDoc(doc(db, 'assessments', existing.id), payload);
-      await setDoc(doc(db, 'assessmentKeys', existing.id), { assessmentId: existing.id, courseId: selected.id, schoolId: selected.schoolId, answers, updatedAt: serverTimestamp() }, { merge: true });
-      closeModal(); toast('Assessment updated.', 'success'); return render('assessments');
+      if (!hasAttempts) {
+        await setDoc(doc(db, 'assessmentKeys', existing.id), { assessmentId: existing.id, courseId: selected.id, schoolId: selected.schoolId, answers, updatedAt: serverTimestamp() }, { merge: true });
+      }
+      closeModal(); toast(hasAttempts ? 'Assessment details updated. Existing question snapshot preserved.' : 'Assessment updated.', 'success'); return render('assessments');
     }
 
     const ref = await addDoc(collection(db, 'assessments'), { courseId: selected.id, schoolId: selected.schoolId, ...payload, createdBy: uid(), createdAt: serverTimestamp() });
