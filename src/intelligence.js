@@ -451,9 +451,9 @@ function assessmentView() {
   const attempts = state.attempts.filter((item) => item.courseId === selected.id && item.status === 'submitted');
   return `${hero('ASSESSMENTS', esc(selected.name), 'Build reusable questions, publish assessments, and review results without exposing answer keys to student accounts.', manager ? `<button class="btn btn-primary" data-p3-action="new-question">Add question</button><button class="btn btn-secondary" data-p3-action="new-assessment">Create assessment</button>` : '')}${coursePicker('assessments')}
     <section class="section grid grid-3">${metric('Question bank', questions.length, 'Reusable course questions')}${metric('Assessments', assessments.length, 'Draft + published')}${metric('Awaiting review', attempts.length, 'Submitted attempts')}</section>
-    <section class="section grid grid-2"><div class="card"><div class="section-head"><div><span class="eyebrow">ASSESSMENTS</span><h3>Course assessments</h3></div></div>${assessments.length ? `<div class="list">${assessments.map((item) => `<div class="list-row"><div class="list-main"><strong>${esc(item.title)}</strong><span>${(item.items || []).length} questions · ${Number(item.pointsPossible || 0)} pts · ${formatDate(item.dueAt)}</span></div><span class="pill ${item.status === 'published' ? 'success' : 'warning'}">${esc(item.status)}</span></div>`).join('')}</div>` : '<div class="empty-state"><strong>No assessments yet</strong>Create one from your question bank.</div>'}</div>
+    <section class="section grid grid-2"><div class="card"><div class="section-head"><div><span class="eyebrow">ASSESSMENTS</span><h3>Course assessments</h3></div></div>${assessments.length ? `<div class="list">${assessments.map((item) => `<div class="list-row"><div class="list-main"><strong>${esc(item.title)}</strong><span>${(item.items || []).length} questions · ${Number(item.pointsPossible || 0)} pts · ${formatDate(item.dueAt)}</span></div><div class="row-actions"><span class="pill ${item.status === 'published' ? 'success' : 'warning'}">${esc(item.status)}</span>${manager ? `<button class="pill clickable" data-p3-action="edit-assessment" data-assessment-id="${esc(item.id)}">Edit</button>` : ''}</div></div>`).join('')}</div>` : '<div class="empty-state"><strong>No assessments yet</strong>Create one from your question bank.</div>'}</div>
     <div class="card"><div class="section-head"><div><span class="eyebrow">REVIEW</span><h3>Submitted attempts</h3></div></div>${attempts.length ? `<div class="list">${attempts.map((item) => `<div class="list-row"><div class="list-main"><strong>${esc(personName(item.studentId))}</strong><span>${esc(assessment(item.assessmentId)?.title || 'Assessment')} · submitted ${formatDate(item.submittedAt, true)}</span></div><button class="pill clickable info" data-p3-action="review-attempt" data-attempt-id="${esc(item.id)}">Review</button></div>`).join('')}</div>` : '<div class="empty-state"><strong>Nothing waiting</strong>Submitted assessments will appear here.</div>'}</div></section>
-    <section class="section card"><div class="section-head"><div><span class="eyebrow">QUESTION BANK</span><h3>${esc(selected.name)}</h3></div>${manager ? '<button class="link-button" data-p3-action="new-question">Add question</button>' : ''}</div>${questions.length ? `<div class="table-wrap"><table><thead><tr><th>Question</th><th>Type</th><th>Points</th><th>Standard</th></tr></thead><tbody>${questions.map((item) => `<tr><td><span class="row-title">${esc(item.prompt)}</span></td><td>${esc(item.type.replaceAll('_', ' '))}</td><td>${Number(item.points || 0)}</td><td>${esc((item.standardIds || []).map((id) => standard(id)?.code).filter(Boolean).join(', ') || '—')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state"><strong>No questions yet</strong>Add reusable questions before creating an assessment.</div>'}</section>`;
+    <section class="section card"><div class="section-head"><div><span class="eyebrow">QUESTION BANK</span><h3>${esc(selected.name)}</h3></div>${manager ? '<button class="link-button" data-p3-action="new-question">Add question</button>' : ''}</div>${questions.length ? `<div class="table-wrap"><table><thead><tr><th>Question</th><th>Type</th><th>Points</th><th>Standard</th>${manager ? '<th></th>' : ''}</tr></thead><tbody>${questions.map((item) => `<tr><td><span class="row-title">${esc(item.prompt)}</span></td><td>${esc(item.type.replaceAll('_', ' '))}</td><td>${Number(item.points || 0)}</td><td>${esc((item.standardIds || []).map((id) => standard(id)?.code).filter(Boolean).join(', ') || '—')}</td>${manager ? `<td><button class="pill clickable" data-p3-action="edit-question" data-question-id="${esc(item.id)}">Edit</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-state"><strong>No questions yet</strong>Add reusable questions before creating an assessment.</div>'}</section>`;
 }
 
 function learningView() {
@@ -634,9 +634,27 @@ function showMapAssignment(preselectedStandardId = '') {
   </form>`, 'STANDARDS');
 }
 
-function showQuestionForm() {
+function showQuestionForm(questionId = '') {
   const standards = standardsForSelected();
-  openModal('Add question', `<form id="p3-question-form"><div class="form-grid"><div class="field"><label>Type</label><select name="type"><option value="multiple_choice">Multiple choice</option><option value="true_false">True / False</option><option value="short_answer">Short answer</option></select></div><div class="field"><label>Points</label><input name="points" type="number" min="1" step="0.5" value="1" required></div><div class="field span-2"><label>Prompt</label><textarea name="prompt" rows="4" required></textarea></div><div class="field span-2"><label>Options</label><textarea name="options" rows="4" placeholder="For multiple choice, put one option per line. For true/false, leave blank."></textarea></div><div class="field"><label>Correct answer</label><input name="correctAnswer" placeholder="Exact option text or true/false"></div><div class="field"><label>Standard</label><select name="standardId"><option value="">No standard</option>${standards.map((item) => `<option value="${esc(item.id)}">${esc(item.code)} — ${esc(item.title)}</option>`).join('')}</select></div></div><div class="callout info"><strong>Answer-key protection:</strong> the correct answer stays in the teacher-only question bank. Published student assessments receive a safe question snapshot without the answer.</div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Save question</button></div></form>`, 'QUESTION BANK');
+  const existing = questionId ? state.questions.find((item) => item.id === questionId) : null;
+  const selected = course(state.selectedCourseId);
+  if (existing && (!selected || existing.courseId !== selected.id || !canManageCourse(selected.id))) return toast('You cannot edit that question.', 'error');
+  const inAssessments = existing ? state.assessments.filter((item) => (item.questionIds || []).includes(existing.id)).length : 0;
+  const selectedStandard = existing?.standardIds?.[0] || '';
+  openModal(existing ? 'Edit question' : 'Add question', `<form id="p3-question-form">
+    <input type="hidden" name="questionId" value="${esc(existing?.id || '')}">
+    ${existing && inAssessments ? `<div class="callout info" style="margin-bottom:14px"><strong>Used in ${inAssessments} assessment${inAssessments === 1 ? '' : 's'}.</strong><br>Editing this bank question changes future assessment snapshots. Existing assessments keep their current copy until you edit and save that assessment. Assessments with attempts keep their locked snapshot.</div>` : ''}
+    <div class="form-grid">
+      <div class="field"><label>Type</label><select name="type"><option value="multiple_choice" ${existing?.type === 'multiple_choice' ? 'selected' : ''}>Multiple choice</option><option value="true_false" ${existing?.type === 'true_false' ? 'selected' : ''}>True / False</option><option value="short_answer" ${existing?.type === 'short_answer' ? 'selected' : ''}>Short answer</option></select></div>
+      <div class="field"><label>Points</label><input name="points" type="number" min="1" step="0.5" value="${esc(existing?.points ?? 1)}" required></div>
+      <div class="field span-2"><label>Prompt</label><textarea name="prompt" rows="4" required>${esc(existing?.prompt || '')}</textarea></div>
+      <div class="field span-2"><label>Options</label><textarea name="options" rows="5" placeholder="For multiple choice, put one option per line. For true/false, leave blank.">${esc((existing?.options || []).join('\n'))}</textarea></div>
+      <div class="field"><label>Correct answer</label><input name="correctAnswer" value="${esc(existing?.correctAnswer || '')}" placeholder="Exact option text or true/false"></div>
+      <div class="field"><label>Standard</label><select name="standardId"><option value="">No standard</option>${standards.map((item) => `<option value="${esc(item.id)}" ${selectedStandard === item.id ? 'selected' : ''}>${esc(item.code)} — ${esc(item.title)}</option>`).join('')}</select></div>
+    </div>
+    <div class="callout info"><strong>Answer-key protection:</strong> the correct answer stays in the teacher-only question bank. Published student assessments receive a safe question snapshot without the answer.</div>
+    <div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${existing ? 'Save question' : 'Add question'}</button></div>
+  </form>`, 'QUESTION BANK');
 }
 
 function shuffled(items) {
@@ -659,26 +677,43 @@ function presentedAssessmentItems(item) {
   return items;
 }
 
-function showAssessmentForm() {
+function showAssessmentForm(assessmentId = '') {
   const questions = questionsForSelected();
-  if (!questions.length) return toast('Add at least one question first.', 'error');
-  openModal('Create assessment', `<form id="p3-assessment-form"><div class="assignment-builder">
-    <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>1</span><div><strong>Assessment details</strong><small>Name, description, and availability</small></div></div><div class="form-grid">
-      <div class="field span-2"><label>Title</label><input name="title" required></div>
-      <div class="field span-2"><label>Description</label><textarea name="description" rows="3"></textarea></div>
-      <div class="field"><label>Available from</label><input name="availableFrom" type="datetime-local"></div>
-      <div class="field"><label>Due date</label><input name="dueAt" type="datetime-local"></div>
-      <div class="field"><label>Status</label><select name="status"><option value="draft">Draft</option><option value="published">Published</option></select></div>
-    </div></div>
-    <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>2</span><div><strong>Question pool</strong><small>Select reusable questions from the course bank</small></div></div>
-      <div class="p3-check-list">${questions.map((item) => `<label><input type="checkbox" name="questionId" value="${esc(item.id)}"><span><strong>${esc(item.prompt)}</strong><small>${esc(item.type.replaceAll('_',' '))} · ${Number(item.points || 0)} pts</small></span></label>`).join('')}</div>
+  const existing = assessmentId ? assessment(assessmentId) : null;
+  const selected = course(state.selectedCourseId);
+  if (existing && (!selected || existing.courseId !== selected.id || !canManageCourse(selected.id))) return toast('You cannot edit that assessment.', 'error');
+  if (!questions.length && !existing) return toast('Add at least one question first.', 'error');
+
+  const attempts = existing ? state.attempts.filter((item) => item.assessmentId === existing.id) : [];
+  const poolLocked = attempts.length > 0;
+  const selectedIds = new Set(existing?.questionIds || []);
+  const title = existing ? 'Edit assessment' : 'Create assessment';
+
+  openModal(title, `<form id="p3-assessment-form">
+    <input type="hidden" name="assessmentId" value="${esc(existing?.id || '')}">
+    ${poolLocked ? `<div class="callout warning" style="margin-bottom:14px"><strong>Question pool locked.</strong><br>${attempts.length} attempt${attempts.length === 1 ? '' : 's'} already exist. You can edit assessment details and delivery settings, but the question pool is preserved so submitted work remains reviewable.</div>` : ''}
+    <div class="assignment-builder">
+      <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>1</span><div><strong>Assessment details</strong><small>Name, description, and availability</small></div></div><div class="form-grid">
+        <div class="field span-2"><label>Title</label><input name="title" value="${esc(existing?.title || '')}" required></div>
+        <div class="field span-2"><label>Description</label><textarea name="description" rows="3">${esc(existing?.description || '')}</textarea></div>
+        <div class="field"><label>Available from</label><input name="availableFrom" type="datetime-local" value="${esc(dateTimeInput(existing?.availableFrom))}"></div>
+        <div class="field"><label>Due date</label><input name="dueAt" type="datetime-local" value="${esc(dateTimeInput(existing?.dueAt))}"></div>
+        <div class="field"><label>Status</label><select name="status"><option value="draft" ${existing?.status !== 'published' ? 'selected' : ''}>Draft</option><option value="published" ${existing?.status === 'published' ? 'selected' : ''}>Published</option></select></div>
+      </div></div>
+      <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>2</span><div><strong>Question pool</strong><small>${poolLocked ? 'Locked because attempts already exist' : 'Select reusable questions from the course bank'}</small></div></div>
+        <div class="p3-check-list">${questions.map((item) => {
+          const checked = selectedIds.has(item.id);
+          return `<label class="${poolLocked ? 'is-locked' : ''}"><input type="checkbox" name="questionId" value="${esc(item.id)}" ${checked ? 'checked' : ''} ${poolLocked ? 'disabled' : ''}><span><strong>${esc(item.prompt)}</strong><small>${esc(item.type.replaceAll('_',' '))} · ${Number(item.points || 0)} pts</small></span></label>${poolLocked && checked ? `<input type="hidden" name="questionId" value="${esc(item.id)}">` : ''}`;
+        }).join('')}</div>
+      </div>
+      <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>3</span><div><strong>Delivery settings</strong><small>Control how each student sees the assessment</small></div></div><div class="form-grid">
+        <div class="field"><label>Questions per attempt</label><input name="randomQuestionCount" type="number" min="0" step="1" value="${esc(existing?.randomQuestionCount ?? 0)}"><small>0 uses every selected question.</small></div>
+        <div class="field"><label>Question order</label><select name="shuffleQuestions"><option value="no" ${existing?.shuffleQuestions ? '' : 'selected'}>Keep selected order</option><option value="yes" ${existing?.shuffleQuestions ? 'selected' : ''}>Shuffle for each attempt</option></select></div>
+        <div class="field"><label>Answer choices</label><select name="shuffleAnswers"><option value="no" ${existing?.shuffleAnswers ? '' : 'selected'}>Keep option order</option><option value="yes" ${existing?.shuffleAnswers ? 'selected' : ''}>Shuffle multiple-choice options</option></select></div>
+      </div></div>
     </div>
-    <div class="assignment-builder-section"><div class="assignment-builder-heading"><span>3</span><div><strong>Delivery settings</strong><small>Control how each student sees the assessment</small></div></div><div class="form-grid">
-      <div class="field"><label>Questions per attempt</label><input name="randomQuestionCount" type="number" min="0" step="1" value="0"><small>0 uses every selected question.</small></div>
-      <div class="field"><label>Question order</label><select name="shuffleQuestions"><option value="no">Keep selected order</option><option value="yes">Shuffle for each attempt</option></select></div>
-      <div class="field"><label>Answer choices</label><select name="shuffleAnswers"><option value="no">Keep option order</option><option value="yes">Shuffle multiple-choice options</option></select></div>
-    </div></div>
-  </div><div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Create assessment</button></div></form>`, 'ASSESSMENT ENGINE');
+    <div class="modal-actions"><button type="button" class="btn btn-secondary" data-p3-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${existing ? 'Save assessment' : 'Create assessment'}</button></div>
+  </form>`, 'ASSESSMENT ENGINE');
 }
 
 function showTakeAssessment(id) {
@@ -755,23 +790,60 @@ async function handleForm(form) {
   }
   if (form.id === 'p3-question-form') {
     const selected = course(state.selectedCourseId); if (!selected || !canManageCourse(selected.id)) throw new Error('Choose a course you manage.');
+    const questionId = String(data.get('questionId') || '');
     const type = String(data.get('type')); const rawOptions = String(data.get('options') || '').split('\n').map((x) => x.trim()).filter(Boolean);
     const options = type === 'true_false' ? ['true', 'false'] : type === 'multiple_choice' ? rawOptions : [];
     if (type === 'multiple_choice' && options.length < 2) throw new Error('Multiple-choice questions need at least two options.');
     const correctAnswer = String(data.get('correctAnswer') || '').trim();
     if (type !== 'short_answer' && !correctAnswer) throw new Error('Objective questions need a correct answer.');
-    await addDoc(collection(db, 'questionBank'), { courseId: selected.id, schoolId: selected.schoolId, type, prompt: String(data.get('prompt')).trim(), options, correctAnswer, points: Number(data.get('points')) || 1, standardIds: data.get('standardId') ? [String(data.get('standardId'))] : [], createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    if (type === 'multiple_choice' && !options.includes(correctAnswer)) throw new Error('The correct answer must exactly match one of the multiple-choice options.');
+    if (type === 'true_false' && !['true','false'].includes(correctAnswer.toLowerCase())) throw new Error('True / False questions must use true or false as the correct answer.');
+    const payload = { type, prompt: String(data.get('prompt')).trim(), options, correctAnswer, points: Number(data.get('points')) || 1, standardIds: data.get('standardId') ? [String(data.get('standardId'))] : [], updatedAt: serverTimestamp() };
+    if (questionId) {
+      const existing = state.questions.find((item) => item.id === questionId && item.courseId === selected.id);
+      if (!existing) throw new Error('Question unavailable.');
+      await updateDoc(doc(db, 'questionBank', questionId), payload);
+      closeModal(); toast('Question updated.', 'success'); return render('assessments');
+    }
+    await addDoc(collection(db, 'questionBank'), { courseId: selected.id, schoolId: selected.schoolId, ...payload, createdBy: uid(), createdAt: serverTimestamp() });
     closeModal(); toast('Question added to the bank.', 'success'); return render('assessments');
   }
   if (form.id === 'p3-assessment-form') {
     const selected = course(state.selectedCourseId); if (!selected || !canManageCourse(selected.id)) throw new Error('Choose a course you manage.');
-    const ids = data.getAll('questionId').map(String); if (!ids.length) throw new Error('Select at least one question.');
+    const assessmentId = String(data.get('assessmentId') || '');
+    const existing = assessmentId ? assessment(assessmentId) : null;
+    if (assessmentId && (!existing || existing.courseId !== selected.id)) throw new Error('Assessment unavailable.');
+    const ids = [...new Set(data.getAll('questionId').map(String))]; if (!ids.length) throw new Error('Select at least one question.');
     const questions = ids.map((id) => state.questions.find((item) => item.id === id)).filter(Boolean);
-    const items = questions.map((q) => ({ id: q.id, type: q.type, prompt: q.prompt, options: q.options || [], points: Number(q.points) || 0, standardIds: q.standardIds || [] }));
+    if (questions.length !== ids.length) throw new Error('One or more selected questions are unavailable.');
+    const hasAttempts = existing ? state.attempts.some((item) => item.assessmentId === existing.id) : false;
+    const items = hasAttempts
+      ? [...(existing.items || [])]
+      : questions.map((q) => ({ id: q.id, type: q.type, prompt: q.prompt, options: q.options || [], points: Number(q.points) || 0, standardIds: q.standardIds || [] }));
     const pointsPossible = items.reduce((sum, item) => sum + Number(item.points || 0), 0);
     const randomQuestionCount = Math.max(0, Math.min(items.length, Number(data.get('randomQuestionCount')) || 0));
-    const ref = await addDoc(collection(db, 'assessments'), { courseId: selected.id, schoolId: selected.schoolId, title: String(data.get('title')).trim(), description: String(data.get('description') || '').trim(), items, questionIds: ids, pointsPossible, availableFrom: data.get('availableFrom') ? new Date(String(data.get('availableFrom'))) : null, dueAt: data.get('dueAt') ? new Date(String(data.get('dueAt'))) : null, randomQuestionCount, shuffleQuestions: String(data.get('shuffleQuestions')) === 'yes', shuffleAnswers: String(data.get('shuffleAnswers')) === 'yes', status: String(data.get('status')), createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    const availableFrom = data.get('availableFrom') ? new Date(String(data.get('availableFrom'))) : null;
+    const dueAt = data.get('dueAt') ? new Date(String(data.get('dueAt'))) : null;
+    if (availableFrom && Number.isNaN(availableFrom.getTime())) throw new Error('Choose a valid availability date.');
+    if (dueAt && Number.isNaN(dueAt.getTime())) throw new Error('Choose a valid due date.');
+    if (availableFrom && dueAt && availableFrom > dueAt) throw new Error('Available from must be before the due date.');
+    const payload = { title: String(data.get('title')).trim(), description: String(data.get('description') || '').trim(), items, questionIds: ids, pointsPossible, availableFrom, dueAt, randomQuestionCount, shuffleQuestions: String(data.get('shuffleQuestions')) === 'yes', shuffleAnswers: String(data.get('shuffleAnswers')) === 'yes', status: String(data.get('status')), updatedAt: serverTimestamp() };
     const answers = {}; questions.forEach((q) => { answers[q.id] = q.correctAnswer || ''; });
+
+    if (existing) {
+      if (hasAttempts) {
+        const originalIds = [...(existing.questionIds || [])].sort();
+        const submittedIds = [...ids].sort();
+        if (JSON.stringify(originalIds) !== JSON.stringify(submittedIds)) throw new Error('The question pool is locked because attempts already exist.');
+      }
+      await updateDoc(doc(db, 'assessments', existing.id), payload);
+      if (!hasAttempts) {
+        await setDoc(doc(db, 'assessmentKeys', existing.id), { assessmentId: existing.id, courseId: selected.id, schoolId: selected.schoolId, answers, updatedAt: serverTimestamp() }, { merge: true });
+      }
+      closeModal(); toast(hasAttempts ? 'Assessment details updated. Existing question snapshot preserved.' : 'Assessment updated.', 'success'); return render('assessments');
+    }
+
+    const ref = await addDoc(collection(db, 'assessments'), { courseId: selected.id, schoolId: selected.schoolId, ...payload, createdBy: uid(), createdAt: serverTimestamp() });
     await setDoc(doc(db, 'assessmentKeys', ref.id), { assessmentId: ref.id, courseId: selected.id, schoolId: selected.schoolId, answers, createdBy: uid(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
     closeModal(); toast('Assessment created.', 'success'); return render('assessments');
   }
@@ -839,7 +911,9 @@ async function handleAction(event) {
     closeModal(); toast('Standard deleted and mappings cleaned up.', 'success'); await render('learning');
   }
   if (action === 'new-question') showQuestionForm();
+  if (action === 'edit-question') showQuestionForm(target.dataset.questionId);
   if (action === 'new-assessment') showAssessmentForm();
+  if (action === 'edit-assessment') showAssessmentForm(target.dataset.assessmentId);
   if (action === 'take-assessment') showTakeAssessment(target.dataset.assessmentId);
   if (action === 'review-attempt') await showReviewAttempt(target.dataset.attemptId);
   if (action === 'new-intervention') showInterventionForm();
