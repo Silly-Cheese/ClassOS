@@ -23,7 +23,7 @@ function groupNavigation() {
   const buttons = $$('.nav-item', nav);
   if (!buttons.length) return;
 
-  const academic = new Set(['dashboard', 'courses', 'assignments', 'gradebook', 'attendance', 'calendar', 'people']);
+  const academic = new Set(['dashboard', 'courses', 'assignments', 'gradebook', 'grading', 'attendance', 'calendar', 'people']);
   const communication = new Set(['inbox', 'family', 'absent']);
   const administration = new Set(['organizations', 'platform']);
 
@@ -67,7 +67,7 @@ function addTeacherCommandCenter() {
       <span class="classos2-kbd-hint">⌘/Ctrl + K to search</span>
     </div>
     <div class="classos2-action-grid">
-      <button data-classos2-route="gradebook"><strong>Enter grades</strong><span>Open the spreadsheet gradebook</span></button>
+      <button data-classos2-route="grading"><strong>Needs grading</strong><span>Clear submitted work across all classes</span></button>
       <button data-classos2-route="assignments"><strong>Create or review work</strong><span>Assignments and grading queue</span></button>
       <button data-classos2-route="attendance"><strong>Take attendance</strong><span>Record today’s class attendance</span></button>
       <button data-classos2-route="courses"><strong>Open a course</strong><span>Modules, people, assessments, and more</span></button>
@@ -266,6 +266,7 @@ function addPageDescriptor() {
     Course: 'Teach, organize, and communicate',
     Assignments: 'Create, collect, and grade work',
     Gradebook: 'Fast, spreadsheet-style grading',
+    'Needs Grading': 'One queue for submitted work across your courses',
     Attendance: 'Record and review attendance',
     Calendar: 'Plan coursework and deadlines',
     Inbox: 'Classroom communication',
